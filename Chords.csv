@@ -1,0 +1,54 @@
+Chord(s),Quality,Semitones,Notes
+Major fifth,Major,0 4 7,3
+Dominant seventh,Major,0 4 7 10,4
+Major seventh,Major,0 4 7 11,4
+Major sixth,Major,0 4 7 9,4
+Dominant Minor ninth,Major,0 4 7 10 13,5
+Dominant ninth,Major,0 4 7 10 14,5
+Dominant seventh sharp ninth,Major,0 4 7 10 15,5
+Lydian,Major,0 4 7 11 18,5
+Major sixth ninth,Major,0 4 7 9 14,5
+Major ninth,Major,0 4 7 11 14,5
+Seven six,Major,0 4 7 9 10,5
+Augmented eleventh,Major,0 4 7 10 14 18,6
+Dominant eleventh,Major,0 4 7 10 14 17,6
+Major eleventh,Major,0 4 7 11 14 17,6
+Thirteenth flat ninth,Major,0 4 7 10 13 21,6
+Dominant thirteenth,Major,0 4 7 10 14 17 21,7
+Major thirteenth,Major,0 4 7 11 14 17 21,7
+Minor fifth,Minor,0 3 7,3
+Minor Major seventh,Minor,0 3 7 11,4
+Minor seventh,Minor,0 3 7 10,4
+Minor sixth,Minor,0 3 7 9,4
+Minor ninth,Minor,0 3 7 10 14,5
+Minor sixth ninth,Minor,0 3 7 9 14,5
+Minor eleventh,Minor,0 3 7 10 14 17,6
+Minor thirteenth,Minor,0 3 7 10 14 17 21,7
+Augmented,Augmented,0 4 8,3
+Augmented Major seventh,Augmented,0 4 8 11,4
+Augmented seventh,Augmented,0 4 8 10,4
+Major seventh sharp eleventh,Augmented,0 4 8 11 18,5
+Ninth Augmented fifth,Augmented,0 4 8 10 14,5
+Diminished,Diminished,0 3 6,3
+Diminished Major seventh,Diminished,0 3 6 11,4
+Diminished seventh,Diminished,0 3 6 9,4
+Half-Diminished seventh,Diminished,0 4 6 10,4
+Power chord,Indeterminate,0 7,2
+Augmented sixth Italian,Predominant,0 4 10,3
+Augmented sixth French,Predominant,0 4 6 10,4
+Augmented sixth German,Predominant,0 4 7 10,4
+Tristan chord,Predominant,0 3 6 10,4
+Suspended,Suspended,0 5 7,3
+Seventh suspension four,Suspended,0 5 7 10,4
+Ninth flat fifth,M3+d5,0 4 6 10 14,5
+Thirteenth flat ninth flat fifth,M3+d5,0 4 6 10 13 21,6
+Dream chord,Just,0 5 6 7,4
+Magic chord,Just,0 1 5 6 10 12 15 17,8
+Elektra,Bitonal,0 7 9 13 16,5
+So What,Bitonal,0 5 10 15 19,5
+Petrushka,Bitonal,0 1 4 6 7 10,6
+Farben chord,Atonal,0 8 11 16 21,5
+Viennese trichord two forms,Atonal,0 1 6 / 0 6 7,5
+Mystic chord,Atonal,0 6 10 16 21 26,6
+Ode-to-Napoleon hexachord,Atonal,0 1 4 5 8 9,6
+Northern lights,Atonal,1 2 8 12 15 18 19 22 23 28 31,11
