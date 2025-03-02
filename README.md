@@ -8,13 +8,13 @@ Note Expander takes a few piano samples with note information in their filenames
 
 ## Features
 
-- **Intelligent Sample Generation**: Creates missing notes based on your existing samples
-- **Filename Detection**: Automatically detects note and octave from filenames
-- **Time Matching**: Optionally matches all generated samples to the average length of source samples
-- **Full Sample Generation**: Creates a single WAV file with all notes in sequence
-- **CUE File Generation**: Generates a CUE file for the full sample with markers for each note
-- **Recursive Processing**: Process multiple directories at once
-- **Playback**: Option to play all generated notes in sequence
+- **Intelligent Sample Generation**: Creates missing notes based on your existing samples.
+- **Filename Detection**: Automatically detects note and octave from filenames.
+- **Time Matching**: Optionally matches all generated samples to the average length of source samples.
+- **Full Sample Generation**: Creates a single WAV file with all notes in sequence.
+- **Slice Marking**: Embeds full sample with markers for each note, compatible with Dirtywave M8 and more.
+- **Recursive Processing**: Process multiple directories at once.
+- **Playback**: Option to play all generated notes in sequence after processing.
 
 ## How It Works
 
@@ -35,7 +35,7 @@ As long as the filename contains a note letter (A-G), optional sharp (#), and oc
 1. Clone this repository or download the script
 2. Install the required dependencies:
    ```
-   pip install librosa soundfile numpy scipy sounddevice
+   pip install -r requirements.txt
    ```
 
 ## Usage
@@ -79,9 +79,9 @@ Process all subdirectories recursively:
 python note_expander.py -r /path/to/parent/directory
 ```
 
-Full processing with all options:
+Full processing with all processing options:
 ```
-python note_expander.py -r -t -f -P /path/to/samples
+python note_expander.py -fort /path/to/samples
 ```
 
 ## Output

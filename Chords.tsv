@@ -1,0 +1,54 @@
+Chord(s)	Quality	Semitones	Notes
+"Major chord, Dominant, Subdominant, Secondary dominant, Tonic, Subtonic"	Major	"0, 4, 7"	3
+"Dominant seventh chord, Harmonic seventh chord"	Major	"0, 4, 7, 10"	4
+Major seventh chord	Major	"0, 4, 7, 11"	4
+Major sixth chord	Major	"0, 4, 7, 9"	4
+Dominant Minor ninth	Major	"0, 4, 7, 10, 13"	5
+Dominant ninth	Major	"0, 4, 7, 10, 14"	5
+Dominant seventh sharp nine (Hendrix)	Major	"0, 4, 7, 10, 15"	5
+Lydian chord	Major	"0, 4, 7, 11, 18"	5
+Major sixth ninth chord (“6 add 9”)	Major	"0, 4, 7, 9, 14"	5
+Major ninth chord	Major	"0, 4, 7, 11, 14"	5
+Seven six chord (7–6)	Major	"0, 4, 7, 9, 10"	5
+Augmented eleventh chord [1]	Major	"0, 4, 7, 10, 14, 18"	6
+Dominant eleventh chord	Major	"0, 4, 7, 10, 14, 17"	6
+Major eleventh chord	Major	"0, 4, 7, 11, 14, 17"	6
+Thirteenth flat ninth chord	Major	"0, 4, 7, 10, 13, 21"	6
+Dominant thirteenth chord	Major	"0, 4, 7, 10, 14, 17, 21"	7
+Major thirteenth chord	Major	"0, 4, 7, 11, 14, 17, 21"	7
+"Minor chord, Dominant parallel, Subdominant parallel, Tonic parallel, Tonic counter parallel, Supertonic, Submediant, Secondary supertonic chord, Psalms chord, Mediant"	Minor	"0, 3, 7"	3
+Minor Major seventh chord	Minor	"0, 3, 7, 11"	4
+Minor seventh chord	Minor	"0, 3, 7, 10"	4
+Minor sixth chord	Minor	"0, 3, 7, 9"	4
+Minor ninth chord	Minor	"0, 3, 7, 10, 14"	5
+Minor sixth ninth chord (6/9)	Minor	"0, 3, 7, 9, 14"	5
+Minor eleventh chord	Minor	"0, 3, 7, 10, 14, 17"	6
+Minor thirteenth chord	Minor	"0, 3, 7, 10, 14, 17, 21"	7
+Augmented chord	Augmented	"0, 4, 8"	3
+Augmented Major seventh chord	Augmented	"0, 4, 8, 11"	4
+Augmented seventh chord	Augmented	"0, 4, 8, 10"	4
+Major seventh sharp eleventh chord	Augmented	"0, 4, 8, 11, 18"	5
+Ninth Augmented fifth chord	Augmented	"0, 4, 8, 10, 14"	5
+"Diminished chord, Leading-tone triad, Secondary leading-tone chord"	Diminished	"0, 3, 6"	3
+Diminished Major seventh chord	Diminished	"0, 3, 6, 11"	4
+Diminished seventh chord	Diminished	"0, 3, 6, 9"	4
+"Half-Diminished seventh chord, Dominant seventh flat five chord"	Diminished	"0, 4, 6, 10"	4
+Power chord (P5)	Indeterminate	"0, 7"	2
+Augmented sixth chord (Italian)	Predominant	"0, 4, 10"	3
+Augmented sixth chord (French)	Predominant	"0, 4, 6, 10"	4
+Augmented sixth chord (German)	Predominant	"0, 4, 7, 10"	4
+Tristan chord	Predominant	"0, 3, 6, 10"	4
+Suspended chord	Suspended	"0, 5, 7"	3
+Seventh suspension four chord	Suspended	"0, 5, 7, 10"	4
+Ninth flat fifth chord	M3+d5	"0, 4, 6, 10, 14"	5
+Thirteenth flat ninth flat fifth chord	M3+d5	"0, 4, 6, 10, 13, 21"	6
+Dream chord	Just	"0, 5, 6, 7"	4
+Magic chord	Just	"0, 1, 5, 6, 10, 12, 15, 17"	8
+Elektra chord	Bitonal	"0, 7, 9, 13, 16"	5
+So What chord	Bitonal	"0, 5, 10, 15, 19"	5
+Petrushka chord	Bitonal	"0, 1, 4, 6, 7, 10"	6
+Farben chord	Atonal	"0, 8, 11, 16, 21"	5
+Viennese trichord (two forms)	Atonal	"0, 1, 6 / 0, 6, 7"	5
+Mystic chord	Atonal	"0, 6, 10, 16, 21, 26"	6
+“Ode-to-Napoleon” hexachord	Atonal	"0, 1, 4, 5, 8, 9"	6
+Northern lights chord	Atonal	"1, 2, 8, 12, 15, 18, 19, 22, 23, 28, 31"	11

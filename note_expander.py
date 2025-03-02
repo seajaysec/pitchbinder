@@ -36,7 +36,8 @@ def get_note_frequency(note, octave):
 
 def get_all_wav_files(directory="."):
     """Get all WAV files in the specified directory."""
-    return [f for f in os.listdir(directory) if f.lower().endswith(".wav")]
+    # Exclude files with -00-Full in the filename
+    return [f for f in os.listdir(directory) if f.lower().endswith(".wav") and "-00-Full" not in f]
 
 
 def pitch_shift_sample(
@@ -287,13 +288,13 @@ def generate_full_sample(all_samples, prefix, source_dir, target_dir):
             combined_audio = np.append(combined_audio, silence)
             current_position += silence_samples  # Update position after silence
 
-    # Save the combined audio
+    # Save the combined audio to the source directory (not the expansion directory)
     output_filename = f"{prefix}-00-Full.wav"
-    output_path = os.path.join(target_dir, output_filename)
+    output_path = os.path.join(source_dir, output_filename)
     
     # First save the audio data
     sf.write(output_path, combined_audio, sr)
-    print(f"Generated full sample file: {output_filename}")
+    print(f"Generated full sample file: {output_filename} (in source directory)")
     
     # Now add cue markers to the WAV file
     try:
