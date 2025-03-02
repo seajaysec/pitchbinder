@@ -45,6 +45,7 @@ __pycache__/
 .env
 venv/
 .venv/
+.venv
 
 # Build outputs
 dist/
