@@ -86,6 +86,315 @@ def find_closest_sample(target_note, target_octave, existing_samples):
     return closest_sample
 
 
+# Add chord definitions from Chords.tsv
+CHORD_DEFINITIONS = [
+    # Format: (Chord name, Quality, Semitones list, Notes count)
+    ("Major chord", "Major", [0, 4, 7], 3),
+    ("Dominant seventh chord", "Major", [0, 4, 7, 10], 4),
+    ("Major seventh chord", "Major", [0, 4, 7, 11], 4),
+    ("Major sixth chord", "Major", [0, 4, 7, 9], 4),
+    ("Dominant Minor ninth", "Major", [0, 4, 7, 10, 13], 5),
+    ("Dominant ninth", "Major", [0, 4, 7, 10, 14], 5),
+    ("Dominant seventh sharp nine (Hendrix)", "Major", [0, 4, 7, 10, 15], 5),
+    ("Lydian chord", "Major", [0, 4, 7, 11, 18], 5),
+    ("Major sixth ninth chord", "Major", [0, 4, 7, 9, 14], 5),
+    ("Major ninth chord", "Major", [0, 4, 7, 11, 14], 5),
+    ("Seven six chord", "Major", [0, 4, 7, 9, 10], 5),
+    ("Augmented eleventh chord", "Major", [0, 4, 7, 10, 14, 18], 6),
+    ("Dominant eleventh chord", "Major", [0, 4, 7, 10, 14, 17], 6),
+    ("Major eleventh chord", "Major", [0, 4, 7, 11, 14, 17], 6),
+    ("Thirteenth flat ninth chord", "Major", [0, 4, 7, 10, 13, 21], 6),
+    ("Dominant thirteenth chord", "Major", [0, 4, 7, 10, 14, 17, 21], 7),
+    ("Major thirteenth chord", "Major", [0, 4, 7, 11, 14, 17, 21], 7),
+    ("Minor chord", "Minor", [0, 3, 7], 3),
+    ("Minor Major seventh chord", "Minor", [0, 3, 7, 11], 4),
+    ("Minor seventh chord", "Minor", [0, 3, 7, 10], 4),
+    ("Minor sixth chord", "Minor", [0, 3, 7, 9], 4),
+    ("Minor ninth chord", "Minor", [0, 3, 7, 10, 14], 5),
+    ("Minor sixth ninth chord", "Minor", [0, 3, 7, 9, 14], 5),
+    ("Minor eleventh chord", "Minor", [0, 3, 7, 10, 14, 17], 6),
+    ("Minor thirteenth chord", "Minor", [0, 3, 7, 10, 14, 17, 21], 7),
+    ("Augmented chord", "Augmented", [0, 4, 8], 3),
+    ("Augmented Major seventh chord", "Augmented", [0, 4, 8, 11], 4),
+    ("Augmented seventh chord", "Augmented", [0, 4, 8, 10], 4),
+    ("Major seventh sharp eleventh chord", "Augmented", [0, 4, 8, 11, 18], 5),
+    ("Ninth Augmented fifth chord", "Augmented", [0, 4, 8, 10, 14], 5),
+    ("Diminished chord", "Diminished", [0, 3, 6], 3),
+    ("Diminished Major seventh chord", "Diminished", [0, 3, 6, 11], 4),
+    ("Diminished seventh chord", "Diminished", [0, 3, 6, 9], 4),
+    ("Half-Diminished seventh chord", "Diminished", [0, 4, 6, 10], 4),
+    ("Power chord", "Indeterminate", [0, 7], 2),
+    ("Augmented sixth chord (Italian)", "Predominant", [0, 4, 10], 3),
+    ("Augmented sixth chord (French)", "Predominant", [0, 4, 6, 10], 4),
+    ("Augmented sixth chord (German)", "Predominant", [0, 4, 7, 10], 4),
+    ("Tristan chord", "Predominant", [0, 3, 6, 10], 4),
+    ("Suspended chord", "Suspended", [0, 5, 7], 3),
+    ("Seventh suspension four chord", "Suspended", [0, 5, 7, 10], 4),
+    ("Ninth flat fifth chord", "M3+d5", [0, 4, 6, 10, 14], 5),
+    ("Thirteenth flat ninth flat fifth chord", "M3+d5", [0, 4, 6, 10, 13, 21], 6),
+    ("Dream chord", "Just", [0, 5, 6, 7], 4),
+    ("Magic chord", "Just", [0, 1, 5, 6, 10, 12, 15, 17], 8),
+    ("Elektra chord", "Bitonal", [0, 7, 9, 13, 16], 5),
+    ("So What chord", "Bitonal", [0, 5, 10, 15, 19], 5),
+    ("Petrushka chord", "Bitonal", [0, 1, 4, 6, 7, 10], 6),
+    ("Farben chord", "Atonal", [0, 8, 11, 16, 21], 5),
+    ("Viennese trichord", "Atonal", [0, 1, 6], 3),
+    ("Viennese trichord (alt)", "Atonal", [0, 6, 7], 3),
+    ("Mystic chord", "Atonal", [0, 6, 10, 16, 21, 26], 6),
+    ("Ode-to-Napoleon hexachord", "Atonal", [0, 1, 4, 5, 8, 9], 6),
+    ("Northern lights chord", "Atonal", [1, 2, 8, 12, 15, 18, 19, 22, 23, 28, 31], 11),
+]
+
+
+def load_chord_definitions_from_tsv(tsv_path):
+    """Load chord definitions from a TSV file."""
+    chord_defs = []
+    try:
+        with open(tsv_path, "r") as f:
+            reader = csv.reader(f, delimiter="\t")
+            next(reader)  # Skip header
+            for row in reader:
+                if len(row) >= 4:
+                    chord_names = row[0].strip('"').split(", ")
+                    quality = row[1]
+                    # Parse semitones from string like "0, 4, 7"
+                    semitones_str = row[2].strip('"')
+                    semitones = [int(s.strip()) for s in semitones_str.split(",")]
+                    notes_count = int(row[3])
+
+                    # Add each chord name as a separate entry
+                    for chord_name in chord_names:
+                        chord_defs.append((chord_name, quality, semitones, notes_count))
+        return chord_defs
+    except Exception as e:
+        print(f"Error loading chord definitions from {tsv_path}: {e}")
+        print("Using built-in chord definitions instead.")
+        return CHORD_DEFINITIONS
+
+
+def get_note_from_semitone(root_note, root_octave, semitone_offset):
+    """Get the note and octave given a root note and semitone offset."""
+    notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+    # Calculate the absolute semitone position of the root note
+    root_index = notes.index(root_note)
+    absolute_semitone = root_octave * 12 + root_index
+
+    # Add the offset to get the target semitone
+    target_semitone = absolute_semitone + semitone_offset
+
+    # Calculate the target octave and note
+    target_octave = target_semitone // 12
+    target_note_index = target_semitone % 12
+    target_note = notes[target_note_index]
+
+    return target_note, target_octave
+
+
+def generate_chord(
+    root_note,
+    root_octave,
+    semitones,
+    all_samples,
+    source_dir,
+    target_dir,
+    prefix,
+    chord_duration_factor=4.0,
+):
+    """Generate a chord sample by mixing multiple note samples."""
+    notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+    # Get the sample rate from the first available sample
+    first_sample = all_samples[0]
+    first_path = os.path.join(source_dir, first_sample)
+    if not os.path.exists(first_path):
+        first_path = os.path.join(target_dir, first_sample)
+    _, sr = librosa.load(first_path, sr=None)
+
+    # Initialize an empty array for the mixed audio
+    mixed_audio = None
+    max_length = 0
+
+    # Load and process each note in the chord
+    note_audios = []
+    for semitone in semitones:
+        # Get the note and octave for this semitone offset
+        note, octave = get_note_from_semitone(root_note, root_octave, semitone)
+
+        # Find the sample file for this note
+        note_filename = f"{prefix}-{note}{octave}.wav"
+
+        # Check if the file exists in target directory first, then source
+        note_path = None
+        if os.path.exists(os.path.join(target_dir, note_filename)):
+            note_path = os.path.join(target_dir, note_filename)
+        elif os.path.exists(os.path.join(source_dir, note_filename)):
+            note_path = os.path.join(source_dir, note_filename)
+        else:
+            # If the exact note doesn't exist, find the closest available note
+            closest_sample = find_closest_sample(note, octave, all_samples)
+            if closest_sample:
+                closest_note, closest_octave = parse_note_from_filename(closest_sample)
+
+                # Load the closest sample
+                audio, sr = librosa.load(
+                    os.path.join(source_dir, closest_sample), sr=None
+                )
+
+                # Pitch shift to the target note
+                audio, sr = pitch_shift_sample(
+                    audio, sr, closest_note, closest_octave, note, octave
+                )
+
+                note_audios.append(audio)
+                max_length = max(max_length, len(audio))
+                continue
+            else:
+                print(
+                    f"Warning: Could not find a suitable sample for {note}{octave} in chord"
+                )
+                continue
+
+        # Load the audio for this note
+        audio, _ = librosa.load(note_path, sr=sr)
+        note_audios.append(audio)
+        max_length = max(max_length, len(audio))
+
+    if not note_audios:
+        print(
+            f"Error: Could not generate chord with root {root_note}{root_octave} - no valid notes found"
+        )
+        return None, None
+
+    # Extend chord duration by the specified factor
+    if chord_duration_factor > 1.0:
+        extended_max_length = int(max_length * chord_duration_factor)
+        extended_note_audios = []
+
+        for audio in note_audios:
+            # Use time stretching to extend the duration
+            rate = 1.0 / chord_duration_factor  # Inverse for librosa's time_stretch
+
+            # For very short samples, use a smaller n_fft value
+            n_fft = 2048  # Default value
+            if len(audio) < n_fft:
+                # Use a power of 2 that's smaller than the audio length
+                n_fft = 2 ** int(np.log2(len(audio) - 1))
+                n_fft = max(32, n_fft)  # Ensure it's not too small
+
+            # Convert audio to float64 to ensure it's the right type for time_stretch
+            audio_float = audio.astype(np.float64)
+
+            # Use librosa's time stretching
+            extended_audio = librosa.effects.time_stretch(
+                audio_float, rate=float(rate), n_fft=n_fft
+            )
+
+            extended_note_audios.append(extended_audio)
+
+        note_audios = extended_note_audios
+        max_length = extended_max_length
+
+    # Mix all notes together
+    mixed_audio = np.zeros(max_length)
+    for audio in note_audios:
+        # Pad shorter audio to match the longest one
+        padded_audio = np.pad(audio, (0, max(0, max_length - len(audio))))
+
+        # Add to the mix (with normalization to prevent clipping)
+        mixed_audio += padded_audio / len(note_audios)
+
+    # Apply a slight fade-in and fade-out to prevent clicks
+    fade_samples = min(int(sr * 0.01), max_length // 10)  # 10ms fade or 1/10 of length
+    if fade_samples > 0:
+        # Fade in
+        fade_in = np.linspace(0, 1, fade_samples)
+        mixed_audio[:fade_samples] *= fade_in
+
+        # Fade out
+        fade_out = np.linspace(1, 0, fade_samples)
+        mixed_audio[-fade_samples:] *= fade_out
+
+    return mixed_audio, sr
+
+
+def generate_chords(
+    prefix, all_samples, source_dir, chord_dir, chord_definitions=None, tsv_path=None
+):
+    """Generate chord samples based on the provided chord definitions."""
+    notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+    # Load chord definitions from TSV if provided
+    if tsv_path and os.path.exists(tsv_path):
+        chord_defs = load_chord_definitions_from_tsv(tsv_path)
+    else:
+        chord_defs = chord_definitions or CHORD_DEFINITIONS
+
+    print(f"\nGenerating {len(chord_defs)} chord types...")
+
+    # Create the main chord directory if it doesn't exist
+    if not os.path.exists(chord_dir):
+        os.makedirs(chord_dir)
+
+    # Group chord definitions by quality
+    chord_by_quality = {}
+    for chord_name, quality, semitones, _ in chord_defs:
+        if quality not in chord_by_quality:
+            chord_by_quality[quality] = []
+        chord_by_quality[quality].append((chord_name, semitones))
+
+    # Generate chords for each quality
+    for quality, chords in chord_by_quality.items():
+        # Create a directory for this chord quality
+        quality_dir = os.path.join(chord_dir, quality)
+        if not os.path.exists(quality_dir):
+            os.makedirs(quality_dir)
+
+        print(f"\nGenerating {len(chords)} {quality} chord types...")
+
+        # Generate each chord type with roots from C2 to B4
+        for chord_name, semitones in chords:
+            # Create a safe filename from the chord name
+            safe_chord_name = re.sub(r"[^\w\-]", "_", chord_name)
+
+            print(f"  Generating {chord_name} chords...")
+
+            # Generate chords with roots from C2 to B4
+            for octave in range(2, 5):
+                for note in notes:
+                    # Skip if the highest note in the chord would be above B8
+                    highest_semitone = max(semitones)
+                    highest_note, highest_octave = get_note_from_semitone(
+                        note, octave, highest_semitone
+                    )
+                    if highest_octave > 8:
+                        continue
+
+                    # Generate the chord
+                    chord_audio, sr = generate_chord(
+                        note,
+                        octave,
+                        semitones,
+                        all_samples,
+                        source_dir,
+                        source_dir,
+                        prefix,
+                        chord_duration_factor=4.0,
+                    )
+
+                    if chord_audio is not None:
+                        # Save the chord
+                        chord_filename = (
+                            f"{prefix}-{safe_chord_name}-{note}{octave}.wav"
+                        )
+                        chord_path = os.path.join(quality_dir, chord_filename)
+                        sf.write(chord_path, chord_audio, sr)
+                        print(f"    Generated {chord_filename}")
+
+    print("\nChord generation complete!")
+    return chord_dir
+
+
 def generate_missing_samples(
     prefix, existing_samples, source_dir, target_dir, time_match=False
 ):
@@ -609,311 +918,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# Add chord definitions from Chords.tsv
-CHORD_DEFINITIONS = [
-    # Format: (Chord name, Quality, Semitones list, Notes count)
-    ("Major chord", "Major", [0, 4, 7], 3),
-    ("Dominant seventh chord", "Major", [0, 4, 7, 10], 4),
-    ("Major seventh chord", "Major", [0, 4, 7, 11], 4),
-    ("Major sixth chord", "Major", [0, 4, 7, 9], 4),
-    ("Dominant Minor ninth", "Major", [0, 4, 7, 10, 13], 5),
-    ("Dominant ninth", "Major", [0, 4, 7, 10, 14], 5),
-    ("Dominant seventh sharp nine (Hendrix)", "Major", [0, 4, 7, 10, 15], 5),
-    ("Lydian chord", "Major", [0, 4, 7, 11, 18], 5),
-    ("Major sixth ninth chord", "Major", [0, 4, 7, 9, 14], 5),
-    ("Major ninth chord", "Major", [0, 4, 7, 11, 14], 5),
-    ("Seven six chord", "Major", [0, 4, 7, 9, 10], 5),
-    ("Augmented eleventh chord", "Major", [0, 4, 7, 10, 14, 18], 6),
-    ("Dominant eleventh chord", "Major", [0, 4, 7, 10, 14, 17], 6),
-    ("Major eleventh chord", "Major", [0, 4, 7, 11, 14, 17], 6),
-    ("Thirteenth flat ninth chord", "Major", [0, 4, 7, 10, 13, 21], 6),
-    ("Dominant thirteenth chord", "Major", [0, 4, 7, 10, 14, 17, 21], 7),
-    ("Major thirteenth chord", "Major", [0, 4, 7, 11, 14, 17, 21], 7),
-    ("Minor chord", "Minor", [0, 3, 7], 3),
-    ("Minor Major seventh chord", "Minor", [0, 3, 7, 11], 4),
-    ("Minor seventh chord", "Minor", [0, 3, 7, 10], 4),
-    ("Minor sixth chord", "Minor", [0, 3, 7, 9], 4),
-    ("Minor ninth chord", "Minor", [0, 3, 7, 10, 14], 5),
-    ("Minor sixth ninth chord", "Minor", [0, 3, 7, 9, 14], 5),
-    ("Minor eleventh chord", "Minor", [0, 3, 7, 10, 14, 17], 6),
-    ("Minor thirteenth chord", "Minor", [0, 3, 7, 10, 14, 17, 21], 7),
-    ("Augmented chord", "Augmented", [0, 4, 8], 3),
-    ("Augmented Major seventh chord", "Augmented", [0, 4, 8, 11], 4),
-    ("Augmented seventh chord", "Augmented", [0, 4, 8, 10], 4),
-    ("Major seventh sharp eleventh chord", "Augmented", [0, 4, 8, 11, 18], 5),
-    ("Ninth Augmented fifth chord", "Augmented", [0, 4, 8, 10, 14], 5),
-    ("Diminished chord", "Diminished", [0, 3, 6], 3),
-    ("Diminished Major seventh chord", "Diminished", [0, 3, 6, 11], 4),
-    ("Diminished seventh chord", "Diminished", [0, 3, 6, 9], 4),
-    ("Half-Diminished seventh chord", "Diminished", [0, 4, 6, 10], 4),
-    ("Power chord", "Indeterminate", [0, 7], 2),
-    ("Augmented sixth chord (Italian)", "Predominant", [0, 4, 10], 3),
-    ("Augmented sixth chord (French)", "Predominant", [0, 4, 6, 10], 4),
-    ("Augmented sixth chord (German)", "Predominant", [0, 4, 7, 10], 4),
-    ("Tristan chord", "Predominant", [0, 3, 6, 10], 4),
-    ("Suspended chord", "Suspended", [0, 5, 7], 3),
-    ("Seventh suspension four chord", "Suspended", [0, 5, 7, 10], 4),
-    ("Ninth flat fifth chord", "M3+d5", [0, 4, 6, 10, 14], 5),
-    ("Thirteenth flat ninth flat fifth chord", "M3+d5", [0, 4, 6, 10, 13, 21], 6),
-    ("Dream chord", "Just", [0, 5, 6, 7], 4),
-    ("Magic chord", "Just", [0, 1, 5, 6, 10, 12, 15, 17], 8),
-    ("Elektra chord", "Bitonal", [0, 7, 9, 13, 16], 5),
-    ("So What chord", "Bitonal", [0, 5, 10, 15, 19], 5),
-    ("Petrushka chord", "Bitonal", [0, 1, 4, 6, 7, 10], 6),
-    ("Farben chord", "Atonal", [0, 8, 11, 16, 21], 5),
-    ("Viennese trichord", "Atonal", [0, 1, 6], 3),
-    ("Viennese trichord (alt)", "Atonal", [0, 6, 7], 3),
-    ("Mystic chord", "Atonal", [0, 6, 10, 16, 21, 26], 6),
-    ("Ode-to-Napoleon hexachord", "Atonal", [0, 1, 4, 5, 8, 9], 6),
-    ("Northern lights chord", "Atonal", [1, 2, 8, 12, 15, 18, 19, 22, 23, 28, 31], 11),
-]
-
-
-def load_chord_definitions_from_tsv(tsv_path):
-    """Load chord definitions from a TSV file."""
-    chord_defs = []
-    try:
-        with open(tsv_path, "r") as f:
-            reader = csv.reader(f, delimiter="\t")
-            next(reader)  # Skip header
-            for row in reader:
-                if len(row) >= 4:
-                    chord_names = row[0].strip('"').split(", ")
-                    quality = row[1]
-                    # Parse semitones from string like "0, 4, 7"
-                    semitones_str = row[2].strip('"')
-                    semitones = [int(s.strip()) for s in semitones_str.split(",")]
-                    notes_count = int(row[3])
-
-                    # Add each chord name as a separate entry
-                    for chord_name in chord_names:
-                        chord_defs.append((chord_name, quality, semitones, notes_count))
-        return chord_defs
-    except Exception as e:
-        print(f"Error loading chord definitions from {tsv_path}: {e}")
-        print("Using built-in chord definitions instead.")
-        return CHORD_DEFINITIONS
-
-
-def get_note_from_semitone(root_note, root_octave, semitone_offset):
-    """Get the note and octave given a root note and semitone offset."""
-    notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-
-    # Calculate the absolute semitone position of the root note
-    root_index = notes.index(root_note)
-    absolute_semitone = root_octave * 12 + root_index
-
-    # Add the offset to get the target semitone
-    target_semitone = absolute_semitone + semitone_offset
-
-    # Calculate the target octave and note
-    target_octave = target_semitone // 12
-    target_note_index = target_semitone % 12
-    target_note = notes[target_note_index]
-
-    return target_note, target_octave
-
-
-def generate_chord(
-    root_note,
-    root_octave,
-    semitones,
-    all_samples,
-    source_dir,
-    target_dir,
-    prefix,
-    chord_duration_factor=4.0,
-):
-    """Generate a chord sample by mixing multiple note samples."""
-    notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-
-    # Get the sample rate from the first available sample
-    first_sample = all_samples[0]
-    first_path = os.path.join(source_dir, first_sample)
-    if not os.path.exists(first_path):
-        first_path = os.path.join(target_dir, first_sample)
-    _, sr = librosa.load(first_path, sr=None)
-
-    # Initialize an empty array for the mixed audio
-    mixed_audio = None
-    max_length = 0
-
-    # Load and process each note in the chord
-    note_audios = []
-    for semitone in semitones:
-        # Get the note and octave for this semitone offset
-        note, octave = get_note_from_semitone(root_note, root_octave, semitone)
-
-        # Find the sample file for this note
-        note_filename = f"{prefix}-{note}{octave}.wav"
-
-        # Check if the file exists in target directory first, then source
-        note_path = None
-        if os.path.exists(os.path.join(target_dir, note_filename)):
-            note_path = os.path.join(target_dir, note_filename)
-        elif os.path.exists(os.path.join(source_dir, note_filename)):
-            note_path = os.path.join(source_dir, note_filename)
-        else:
-            # If the exact note doesn't exist, find the closest available note
-            closest_sample = find_closest_sample(note, octave, all_samples)
-            if closest_sample:
-                closest_note, closest_octave = parse_note_from_filename(closest_sample)
-
-                # Load the closest sample
-                audio, sr = librosa.load(
-                    os.path.join(source_dir, closest_sample), sr=None
-                )
-
-                # Pitch shift to the target note
-                audio, sr = pitch_shift_sample(
-                    audio, sr, closest_note, closest_octave, note, octave
-                )
-
-                note_audios.append(audio)
-                max_length = max(max_length, len(audio))
-                continue
-            else:
-                print(
-                    f"Warning: Could not find a suitable sample for {note}{octave} in chord"
-                )
-                continue
-
-        # Load the audio for this note
-        audio, _ = librosa.load(note_path, sr=sr)
-        note_audios.append(audio)
-        max_length = max(max_length, len(audio))
-
-    if not note_audios:
-        print(
-            f"Error: Could not generate chord with root {root_note}{root_octave} - no valid notes found"
-        )
-        return None, None
-
-    # Extend chord duration by the specified factor
-    if chord_duration_factor > 1.0:
-        extended_max_length = int(max_length * chord_duration_factor)
-        extended_note_audios = []
-
-        for audio in note_audios:
-            # Use time stretching to extend the duration
-            rate = 1.0 / chord_duration_factor  # Inverse for librosa's time_stretch
-
-            # For very short samples, use a smaller n_fft value
-            n_fft = 2048  # Default value
-            if len(audio) < n_fft:
-                # Use a power of 2 that's smaller than the audio length
-                n_fft = 2 ** int(np.log2(len(audio) - 1))
-                n_fft = max(32, n_fft)  # Ensure it's not too small
-
-            # Convert audio to float64 to ensure it's the right type for time_stretch
-            audio_float = audio.astype(np.float64)
-
-            # Use librosa's time stretching
-            extended_audio = librosa.effects.time_stretch(
-                audio_float, rate=float(rate), n_fft=n_fft
-            )
-
-            extended_note_audios.append(extended_audio)
-
-        note_audios = extended_note_audios
-        max_length = extended_max_length
-
-    # Mix all notes together
-    mixed_audio = np.zeros(max_length)
-    for audio in note_audios:
-        # Pad shorter audio to match the longest one
-        padded_audio = np.pad(audio, (0, max(0, max_length - len(audio))))
-
-        # Add to the mix (with normalization to prevent clipping)
-        mixed_audio += padded_audio / len(note_audios)
-
-    # Apply a slight fade-in and fade-out to prevent clicks
-    fade_samples = min(int(sr * 0.01), max_length // 10)  # 10ms fade or 1/10 of length
-    if fade_samples > 0:
-        # Fade in
-        fade_in = np.linspace(0, 1, fade_samples)
-        mixed_audio[:fade_samples] *= fade_in
-
-        # Fade out
-        fade_out = np.linspace(1, 0, fade_samples)
-        mixed_audio[-fade_samples:] *= fade_out
-
-    return mixed_audio, sr
-
-
-def generate_chords(
-    prefix, all_samples, source_dir, chord_dir, chord_definitions=None, tsv_path=None
-):
-    """Generate chord samples based on the provided chord definitions."""
-    notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-
-    # Load chord definitions from TSV if provided
-    if tsv_path and os.path.exists(tsv_path):
-        chord_defs = load_chord_definitions_from_tsv(tsv_path)
-    else:
-        chord_defs = chord_definitions or CHORD_DEFINITIONS
-
-    print(f"\nGenerating {len(chord_defs)} chord types...")
-
-    # Create the main chord directory if it doesn't exist
-    if not os.path.exists(chord_dir):
-        os.makedirs(chord_dir)
-
-    # Group chord definitions by quality
-    chord_by_quality = {}
-    for chord_name, quality, semitones, _ in chord_defs:
-        if quality not in chord_by_quality:
-            chord_by_quality[quality] = []
-        chord_by_quality[quality].append((chord_name, semitones))
-
-    # Generate chords for each quality
-    for quality, chords in chord_by_quality.items():
-        # Create a directory for this chord quality
-        quality_dir = os.path.join(chord_dir, quality)
-        if not os.path.exists(quality_dir):
-            os.makedirs(quality_dir)
-
-        print(f"\nGenerating {len(chords)} {quality} chord types...")
-
-        # Generate each chord type with roots from C2 to B4
-        for chord_name, semitones in chords:
-            # Create a safe filename from the chord name
-            safe_chord_name = re.sub(r"[^\w\-]", "_", chord_name)
-
-            print(f"  Generating {chord_name} chords...")
-
-            # Generate chords with roots from C2 to B4
-            for octave in range(2, 5):
-                for note in notes:
-                    # Skip if the highest note in the chord would be above B8
-                    highest_semitone = max(semitones)
-                    highest_note, highest_octave = get_note_from_semitone(
-                        note, octave, highest_semitone
-                    )
-                    if highest_octave > 8:
-                        continue
-
-                    # Generate the chord
-                    chord_audio, sr = generate_chord(
-                        note,
-                        octave,
-                        semitones,
-                        all_samples,
-                        source_dir,
-                        source_dir,
-                        prefix,
-                        chord_duration_factor=4.0,
-                    )
-
-                    if chord_audio is not None:
-                        # Save the chord
-                        chord_filename = (
-                            f"{prefix}-{safe_chord_name}-{note}{octave}.wav"
-                        )
-                        chord_path = os.path.join(quality_dir, chord_filename)
-                        sf.write(chord_path, chord_audio, sr)
-                        print(f"    Generated {chord_filename}")
-
-    print("\nChord generation complete!")
-    return chord_dir
