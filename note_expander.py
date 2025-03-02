@@ -206,9 +206,31 @@ def generate_chord(
 
     # Get the sample rate from the first available sample
     first_sample = all_samples[0]
-    first_path = os.path.join(source_dir, first_sample)
-    if not os.path.exists(first_path):
+
+    # Check both source and target directories for the first sample
+    first_path = None
+    if os.path.exists(os.path.join(target_dir, first_sample)):
         first_path = os.path.join(target_dir, first_sample)
+    elif os.path.exists(os.path.join(source_dir, first_sample)):
+        first_path = os.path.join(source_dir, first_sample)
+
+    # If we still can't find the file, try to find any valid sample
+    if not first_path:
+        for sample in all_samples:
+            if os.path.exists(os.path.join(target_dir, sample)):
+                first_path = os.path.join(target_dir, sample)
+                break
+            elif os.path.exists(os.path.join(source_dir, sample)):
+                first_path = os.path.join(source_dir, sample)
+                break
+
+    if not first_path:
+        print(
+            f"Error: Could not find any valid sample files in {source_dir} or {target_dir}"
+        )
+        return None, None
+
+    # Load the sample to get the sample rate
     _, sr = librosa.load(first_path, sr=None)
 
     # Initialize an empty array for the mixed audio
@@ -319,7 +341,13 @@ def generate_chord(
 
 
 def generate_chords(
-    prefix, all_samples, source_dir, chord_dir, chord_definitions=None, tsv_path=None
+    prefix,
+    all_samples,
+    source_dir,
+    chord_dir,
+    target_dir,
+    chord_definitions=None,
+    tsv_path=None,
 ):
     """Generate chord samples based on the provided chord definitions."""
     notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -370,14 +398,14 @@ def generate_chords(
                     if highest_octave > 8:
                         continue
 
-                    # Generate the chord
+                    # Generate the chord - pass both source and target dirs
                     chord_audio, sr = generate_chord(
                         note,
                         octave,
                         semitones,
                         all_samples,
                         source_dir,
-                        source_dir,
+                        target_dir,  # Pass the expansion directory
                         prefix,
                         chord_duration_factor=4.0,
                     )
@@ -776,7 +804,12 @@ def process_directory(
     if gen_chords:
         chord_dir = os.path.join(source_dir, "exp_chords")
         generate_chords(
-            dir_prefix, all_samples, source_dir, chord_dir, tsv_path=chord_tsv
+            dir_prefix,
+            all_samples,
+            source_dir,
+            chord_dir,
+            target_dir,  # Pass the expansion directory
+            tsv_path=chord_tsv,
         )
 
     # Generate full sample file if requested
