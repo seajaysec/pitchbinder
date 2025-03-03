@@ -196,3 +196,44 @@ When generating a full sample file, a single WAV file containing all notes in se
 
 - The quality of pitch-shifted samples decreases as they get further from the source sample.
 - Very extreme pitch shifts (e.g., shifting a C1 to a C8) may not sound natural.
+
+## Troubleshooting
+
+### "Directory not empty" Error During Cleanup
+
+If you encounter an error like this during the cleanup phase:
+
+```
+OSError: [Errno 66] Directory not empty: '/path/to/your/samples/exp_chords'
+```
+
+This can happen when the script tries to remove temporary directories but encounters locked files or permission issues. You can:
+
+1. **Keep artifacts**: Select the "Keep all generated files" option when running the script to skip cleanup entirely.
+
+2. **Manual cleanup**: The error doesn't affect the generated samples, so you can manually delete the `exp_chords` directory later.
+
+3. **Check permissions**: Ensure you have full read/write access to the directory and its contents.
+
+4. **Close other applications**: Make sure no other applications (DAWs, audio players, etc.) are accessing files in the directory.
+
+5. **Restart and try again**: Sometimes simply running the script again will succeed if the issue was temporary.
+
+### Unable to Detect Notes in Filenames
+
+If the script reports that it cannot detect notes in your sample filenames:
+
+1. **Check format**: Ensure filenames contain a note letter (A-G), followed by an optional sharp (#) or flat (b), and then an octave number (e.g., `Piano-C4.wav`, `Synth-Ab3.wav`).
+
+2. **Rename files**: You may need to rename your samples to follow the supported naming conventions.
+
+3. **Remove special characters**: Some special characters in filenames can interfere with note detection.
+
+### Other Issues
+
+For other problems:
+
+- Try processing a smaller set of samples to identify if specific files are causing issues
+- Check the terminal output for warning messages that might provide more information
+- Ensure your Python environment has all the required dependencies installed
+- Try running with the `-v` or `--verbose` flag for more detailed output
