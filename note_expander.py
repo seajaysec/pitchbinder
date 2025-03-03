@@ -1132,8 +1132,9 @@ def generate_full_sample(all_samples, prefix, source_dir, target_dir):
 
             # Detect and trim silence at the beginning and end
             # This helps prevent clicks without altering the actual sound
+            audio_data = audio[0] if isinstance(audio, tuple) else audio
             non_silent = librosa.effects.trim(
-                audio.astype(np.float64),
+                audio_data.astype(np.float64),
                 top_db=40,  # Higher value = more aggressive trimming
                 frame_length=512,
                 hop_length=128,
@@ -1533,7 +1534,8 @@ def generate_full_chord_samples(chord_dir, prefix):
             audio, _ = librosa.load(chord_file, sr=sr)
 
             # Trim silence at the beginning and end
-            audio, _ = librosa.effects.trim(audio, top_db=30)
+            audio_data = audio[0] if isinstance(audio, tuple) else audio
+            audio, _ = librosa.effects.trim(audio_data.astype(np.float64), top_db=30)
 
             # Limit each sample to 3 seconds max
             max_length = min(len(audio), 3 * sr)
