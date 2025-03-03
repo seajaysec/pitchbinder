@@ -1044,9 +1044,10 @@ def generate_chords(
                         chord_path, chord_audio, sr = core_chords[closest_core]
 
                         # Pitch shift the chord
-                        tqdm.write(
-                            f"{INFO}    Pitch shifting {source_note}{source_octave} chord to {note}{octave}...{RESET}"
-                        )
+                        with tqdm_lock:
+                            tqdm.write(
+                                f"{INFO}    Pitch shifting {source_note}{source_octave} chord to {note}{octave}...{RESET}"
+                            )
 
                         # Calculate pitch shift factor based on semitone distance
                         source_freq = get_note_frequency(source_note, source_octave)
@@ -1072,9 +1073,10 @@ def generate_chords(
 
                             # Only apply time stretching if the difference is significant
                             if abs(stretch_factor - 1.0) > 0.01:
-                                tqdm.write(
-                                    f"{INFO}    Time stretching to match duration (factor: {stretch_factor:.2f}){RESET}"
-                                )
+                                with tqdm_lock:
+                                    tqdm.write(
+                                        f"{INFO}    Time stretching to match duration (factor: {stretch_factor:.2f}){RESET}"
+                                    )
 
                                 # For librosa's time_stretch, rate < 1 makes it longer
                                 rate = 1.0 / stretch_factor
