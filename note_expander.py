@@ -1184,40 +1184,43 @@ def generate_missing_samples(
         if note and octave:
             parsed_samples[sample] = (note, octave)
 
-    # Calculate average duration of existing samples more accurately
-    durations = []
-    for sample in existing_samples:
-        if sample in parsed_samples:
-            # Get file info directly using soundfile instead of loading the entire file
-            file_path = os.path.join(source_dir, sample)
-            info = sf.info(file_path)
-            duration = info.duration  # This gives the exact duration in seconds
-            durations.append(duration)
-            print_info(f"Sample {sample} duration: {duration:.2f} seconds")
+    # Acquire lock for consistent output
+    with tqdm_lock:
+        # Calculate average duration of existing samples more accurately
+        durations = []
+        for sample in existing_samples:
+            if sample in parsed_samples:
+                # Get file info directly using soundfile instead of loading the entire file
+                file_path = os.path.join(source_dir, sample)
+                info = sf.info(file_path)
+                duration = info.duration  # This gives the exact duration in seconds
+                durations.append(duration)
+                print_info(f"Sample {sample} duration: {duration:.2f} seconds")
 
-    avg_duration = np.mean(durations) if durations else 2.0  # Default to 2 seconds
+        avg_duration = np.mean(durations) if durations else 2.0  # Default to 2 seconds
 
-    if time_match and durations:
-        print_info(
-            f"Time matching enabled - target duration: {avg_duration:.2f} seconds"
+        if time_match and durations:
+            print_info(
+                f"Time matching enabled - target duration: {avg_duration:.2f} seconds"
+            )
+
+        # Count total samples to generate
+        total_to_generate = 0
+        for octave in range(1, 9):
+            for note in notes:
+                target_filename = f"{prefix}-{note}{octave}.wav"
+                if target_filename not in existing_samples:
+                    total_to_generate += 1
+
+        # Create progress bar at a fixed position - use position 1 to avoid conflicts with other progress bars
+        position = 1
+        pbar = tqdm(
+            total=total_to_generate,
+            desc=f"Generating samples for {os.path.basename(source_dir)}",
+            position=position,
+            leave=True,
+            bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.BLUE, RESET),
         )
-
-    # Count total samples to generate
-    total_to_generate = 0
-    for octave in range(1, 9):
-        for note in notes:
-            target_filename = f"{prefix}-{note}{octave}.wav"
-            if target_filename not in existing_samples:
-                total_to_generate += 1
-
-    # Create progress bar at a fixed position
-    pbar = tqdm(
-        total=total_to_generate,
-        desc="Generating samples",
-        position=0,
-        leave=True,
-        bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.BLUE, RESET),
-    )
 
     # Generate missing samples for all notes in octaves 1-8
     for octave in range(1, 9):
@@ -1239,7 +1242,10 @@ def generate_missing_samples(
             # Find closest sample to use as source
             source_sample = find_closest_sample(note, octave, existing_samples)
             if not source_sample:
-                print_warning(f"No suitable source sample found for {target_filename}")
+                with tqdm_lock:
+                    print_warning(
+                        f"No suitable source sample found for {target_filename}"
+                    )
                 continue
 
             source_note, source_octave = parsed_samples[source_sample]
@@ -1256,9 +1262,10 @@ def generate_missing_samples(
             if time_match and durations:
                 # Calculate current duration directly from the audio data
                 current_duration = len(new_audio) / new_sr
-                print_info(
-                    f"  Before stretching: {target_filename} duration: {current_duration:.2f} seconds"
-                )
+                with tqdm_lock:
+                    print_info(
+                        f"  Before stretching: {target_filename} duration: {current_duration:.2f} seconds"
+                    )
 
                 # In librosa's time_stretch, rate > 1 speeds up, rate < 1 slows down
                 # So we need to use 1/stretch_factor to get the correct behavior
@@ -1268,9 +1275,10 @@ def generate_missing_samples(
                 if (
                     abs(stretch_factor - 1.0) > 0.01
                 ):  # Only stretch if difference is significant
-                    print_info(
-                        f"  Time stretching {target_filename} (target: {avg_duration:.2f}s, factor: {stretch_factor:.2f}, rate: {rate:.2f})"
-                    )
+                    with tqdm_lock:
+                        print_info(
+                            f"  Time stretching {target_filename} (target: {avg_duration:.2f}s, factor: {stretch_factor:.2f}, rate: {rate:.2f})"
+                        )
 
                     # For very short samples, use a smaller n_fft value
                     n_fft = 2048  # Default value
@@ -1278,9 +1286,10 @@ def generate_missing_samples(
                         # Use a power of 2 that's smaller than the audio length
                         n_fft = 2 ** int(np.log2(len(new_audio) - 1))
                         n_fft = max(32, n_fft)  # Ensure it's not too small
-                        print_info(
-                            f"  Using smaller FFT window (n_fft={n_fft}) for short sample"
-                        )
+                        with tqdm_lock:
+                            print_info(
+                                f"  Using smaller FFT window (n_fft={n_fft}) for short sample"
+                            )
 
                     # Use librosa's high-quality time stretching with corrected rate and appropriate n_fft
                     # Convert to float64 to ensure correct type for time_stretch
@@ -1294,37 +1303,41 @@ def generate_missing_samples(
                         new_audio_float, rate=float(rate), n_fft=n_fft
                     )
 
-                    # Verify the new duration
-                    new_duration = len(new_audio) / new_sr
-                    print_info(
-                        f"  After stretching: {target_filename} duration: {new_duration:.2f} seconds"
-                    )
+                    # Apply a gentle envelope to ensure smooth decay
+                    envelope = np.ones(len(new_audio))
+                    fade_len = min(
+                        int(new_sr * 0.1), len(new_audio) // 10
+                    )  # 100ms fade or 1/10 of length
 
-            # Apply a gentle fade-out to prevent clicks, similar to chord generation
-            # Calculate fade length as 10% of the sample length or 100ms, whichever is longer
-            fade_len = max(int(0.1 * len(new_audio)), int(0.1 * new_sr))  # 10% or 100ms
+                    # Only apply fade out (keep the attack intact)
+                    if fade_len > 0:
+                        envelope[-fade_len:] = np.linspace(1, 0, fade_len)
 
-            # Create a fade-out envelope
-            if fade_len > 0 and fade_len < len(new_audio):
-                # Create an envelope with ones (no change) followed by a linear fade to zero
-                envelope = np.ones(len(new_audio))
-                envelope[-fade_len:] = np.linspace(1, 0, fade_len)
+                    new_audio = new_audio * envelope
 
-                # Apply the envelope
-                new_audio = new_audio * envelope
-                print_info(
-                    f"  Applied {fade_len/new_sr:.2f}s fade-out to prevent clicks"
-                )
+            # Normalize audio to prevent clipping
+            if np.max(np.abs(new_audio)) > 0:
+                new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
 
-            # Save new sample to target directory
-            sf.write(os.path.join(target_dir, target_filename), new_audio, new_sr)
-            print_success(f"Generated {target_filename} from {source_sample}")
+            # Save the pitch-shifted and time-stretched audio
+            output_path = os.path.join(target_dir, target_filename)
+            sf.write(output_path, new_audio, new_sr)
+
+            # Add the generated file to the list
             generated_files.append(target_filename)
 
-            # Update progress bar
-            pbar.update(1)
+            # Print success message
+            with tqdm_lock:
+                print_success(f"Generated {target_filename}")
 
-    pbar.close()
+            # Update the progress bar
+            with tqdm_lock:
+                pbar.update(1)
+
+    # Close the progress bar
+    with tqdm_lock:
+        pbar.close()
+
     return generated_files
 
 
