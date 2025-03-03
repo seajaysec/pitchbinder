@@ -1567,11 +1567,19 @@ def cleanup_artifacts(
 
     if os.path.exists(target_dir):
         print_info(f"Removing expansion directory: {target_dir}")
-        shutil.rmtree(target_dir)
+        try:
+            shutil.rmtree(target_dir)
+        except OSError as e:
+            print_warning(f"Could not completely remove {target_dir}: {e}")
+            print_info("Continuing anyway as this won't affect the results.")
 
     if chord_dir and os.path.exists(chord_dir):
         print_info(f"Removing chord directory: {chord_dir}")
-        shutil.rmtree(chord_dir)
+        try:
+            shutil.rmtree(chord_dir)
+        except OSError as e:
+            print_warning(f"Could not completely remove {chord_dir}: {e}")
+            print_info("Continuing anyway as this won't affect the results.")
 
     print_success("Artifact cleanup complete")
 
