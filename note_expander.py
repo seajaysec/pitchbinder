@@ -535,6 +535,7 @@ def generate_chords(
     chord_dir,
     target_dir,
     chord_qualities=None,
+    generate_inversions=False,
 ):
     """Generate chord samples based on the provided chord definitions."""
     notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -550,6 +551,8 @@ def generate_chords(
         )
 
     print_header(f"Generating {len(chord_defs)} chord types")
+    if generate_inversions:
+        print_info("Inversions will be generated for all applicable chords")
 
     # Create the main chord directory if it doesn't exist
     if not os.path.exists(chord_dir):
@@ -576,6 +579,11 @@ def generate_chords(
                     )
                     if highest_octave <= 8:
                         total_chords += 1
+
+                        # Add count for inversions if enabled
+                        if generate_inversions and len(semitones) >= 3:
+                            # Add inversions count (number of inversions = number of notes - 1)
+                            total_chords += len(semitones) - 1
 
     # Set up progress bars with fixed positions
     # Position 0 is for current task messages
@@ -607,6 +615,12 @@ def generate_chords(
         if not os.path.exists(quality_dir):
             os.makedirs(quality_dir)
 
+        # Create inversions directory if needed
+        if generate_inversions:
+            inversions_dir = os.path.join(quality_dir, "inversions")
+            if not os.path.exists(inversions_dir):
+                os.makedirs(inversions_dir)
+
         # Update the current task message (position 0)
         tqdm.write(f"{INFO}Generating {len(chords)} {quality} chord types...{RESET}")
 
@@ -629,6 +643,15 @@ def generate_chords(
 
             # First generate the core chords (C2-B4) directly
             core_chords = {}
+
+            # Generate inversions if requested and applicable
+            inversions = []
+            if generate_inversions and len(semitones) >= 3:
+                inversions = generate_chord_inversions(semitones)
+                if inversions:
+                    tqdm.write(
+                        f"{INFO}    Will generate {len(inversions)} inversions for {chord_name}{RESET}"
+                    )
 
             # Generate core chords with roots from C2 to B4
             for octave in range(2, 5):
@@ -665,8 +688,38 @@ def generate_chords(
                         # Store the chord for later use in pitch shifting
                         core_chords[(note, octave)] = (chord_path, chord_audio, sr)
 
+                        # Generate inversions for this chord if requested
+                        if generate_inversions and inversions:
+                            for inv_num, inv_semitones in inversions:
+                                # Generate the inverted chord
+                                inv_chord_audio, inv_sr = generate_chord(
+                                    note,
+                                    octave,
+                                    inv_semitones,
+                                    all_samples,
+                                    source_dir,
+                                    target_dir,
+                                    prefix,
+                                    chord_duration_factor=4.0,
+                                )
+
+                                if inv_chord_audio is not None:
+                                    # Save the inverted chord with inversion number in filename
+                                    inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
+                                    inv_chord_path = os.path.join(
+                                        inversions_dir, inv_chord_filename
+                                    )
+                                    sf.write(inv_chord_path, inv_chord_audio, inv_sr)
+                                    tqdm.write(
+                                        f"{SUCCESS}    Generated {inv_chord_filename}{RESET}"
+                                    )
+
                     # Update the master progress bar
                     master_pbar.update(1)
+
+                    # Update for inversions if generated
+                    if generate_inversions and inversions and chord_audio is not None:
+                        master_pbar.update(len(inversions))
 
             # Now generate the extended range (C1-B1 and C5-B8) by pitch shifting
             # First, find the closest core chord for each target chord
@@ -782,8 +835,40 @@ def generate_chords(
                                 f"{SUCCESS}    Generated {chord_filename} (pitch-shifted){RESET}"
                             )
 
+                            # Generate inversions for this chord if requested
+                            if generate_inversions and inversions:
+                                for inv_num, inv_semitones in inversions:
+                                    # Generate the inverted chord by pitch shifting
+                                    inv_chord_audio, inv_sr = generate_chord(
+                                        note,
+                                        octave,
+                                        inv_semitones,
+                                        all_samples,
+                                        source_dir,
+                                        target_dir,
+                                        prefix,
+                                        chord_duration_factor=4.0,
+                                    )
+
+                                    if inv_chord_audio is not None:
+                                        # Save the inverted chord with inversion number in filename
+                                        inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
+                                        inv_chord_path = os.path.join(
+                                            inversions_dir, inv_chord_filename
+                                        )
+                                        sf.write(
+                                            inv_chord_path, inv_chord_audio, inv_sr
+                                        )
+                                        tqdm.write(
+                                            f"{SUCCESS}    Generated {inv_chord_filename} (pitch-shifted){RESET}"
+                                        )
+
                     # Update the master progress bar
                     master_pbar.update(1)
+
+                    # Update for inversions if applicable
+                    if generate_inversions and inversions and closest_core:
+                        master_pbar.update(len(inversions))
 
             # Update chord progress bar
             chord_pbar.update(1)
@@ -1300,6 +1385,7 @@ def process_directory(
             chord_dir,
             target_dir,  # Pass the expansion directory
             chord_qualities=chord_qualities,
+            generate_inversions=True,
         )
 
     # Generate full sample file if requested
@@ -1484,6 +1570,7 @@ def generate_full_chord_samples(chord_dir, prefix):
 
         # First save the audio data using soundfile
         sf.write(output_path, combined_audio, sr)
+        print(f"Generated full sample file: {output_filename} (in exp directory)")
 
         # Now add slice markers to the WAV file
         try:
