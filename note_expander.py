@@ -429,6 +429,11 @@ def generate_chord(
         audio, _ = librosa.load(note_path, sr=sr)
 
         # Trim silence at the beginning to ensure all notes start together
+        # Ensure audio is a numpy array
+        if isinstance(audio, tuple):
+            audio = audio[0]
+
+        # Convert to float64 for librosa.effects.trim
         audio_trimmed, _ = librosa.effects.trim(
             audio.astype(np.float64), top_db=30, frame_length=512, hop_length=128
         )
