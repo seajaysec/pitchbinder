@@ -375,6 +375,11 @@ def generate_chord(
         # Find the sample file for this note
         note_filename = f"{prefix}-{note}{octave}.wav"
 
+        # Debug information
+        print_info(f"Looking for note: {note_filename}")
+        print_info(f"  Checking target dir: {os.path.join(target_dir, note_filename)}")
+        print_info(f"  Checking source dir: {os.path.join(source_dir, note_filename)}")
+
         # Check if the file exists in target directory first, then source
         note_path = None
         if os.path.exists(os.path.join(target_dir, note_filename)):
