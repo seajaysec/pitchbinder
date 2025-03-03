@@ -2545,6 +2545,15 @@ def interactive_mode():
                     }
                 )
 
+            # Start a heartbeat thread to provide periodic updates on processing status
+            heartbeat_stop = threading.Event()
+            heartbeat_thread = threading.Thread(
+                target=status_heartbeat,
+                args=(heartbeat_stop, directories, 10),  # Update every 10 seconds
+            )
+            heartbeat_thread.daemon = True
+            heartbeat_thread.start()
+
             # Process directories in parallel
             with concurrent.futures.ThreadPoolExecutor(
                 max_workers=max_workers
@@ -2568,7 +2577,37 @@ def interactive_mode():
                             result = future.result()
                             pbar.update(1)
                         except Exception as e:
-                            print_error(f"Error processing directory: {e}")
+                            print_error(f"Error in worker thread: {e}")
+                            pbar.update(1)
+
+            # Stop the heartbeat thread
+            heartbeat_stop.set()
+            heartbeat_thread.join(timeout=1.0)
+
+            # Print final summary
+            print_header("Processing Summary")
+            for directory in directories:
+                status = processing_status.get(directory, {})
+                status_msg = status.get("message", "Unknown status")
+                status_type = status.get("type", "info")
+                status_time = status.get("timestamp", "Unknown time")
+
+                if status_type == "success":
+                    print_success(
+                        f"{os.path.basename(directory)}: {status_msg} at {status_time}"
+                    )
+                elif status_type == "error":
+                    print_error(
+                        f"{os.path.basename(directory)}: {status_msg} at {status_time}"
+                    )
+                elif status_type == "warning":
+                    print_warning(
+                        f"{os.path.basename(directory)}: {status_msg} at {status_time}"
+                    )
+                else:
+                    print_info(
+                        f"{os.path.basename(directory)}: {status_msg} at {status_time}"
+                    )
 
             # Play all notes if requested after all processing is complete
             if options_dict["play"]:
@@ -2661,6 +2700,60 @@ def main():
     # Always run in interactive mode
     interactive_mode()
     return
+
+
+def status_heartbeat(stop_event, directories, interval=10):
+    """Periodically print status updates for all directories being processed.
+
+    Args:
+        stop_event: A threading.Event that signals when to stop the heartbeat
+        directories: List of directories being processed
+        interval: How often to print updates (in seconds)
+    """
+    while not stop_event.is_set():
+        # Wait for the specified interval, but check stop_event more frequently
+        for _ in range(interval):
+            if stop_event.is_set():
+                return
+            time.sleep(1)
+
+        # Print a status update for all directories
+        with status_lock:
+            print("\n" + "=" * 80)
+            print(f"{INFO}STATUS UPDATE AT {time.strftime('%H:%M:%S')}{RESET}")
+            print("=" * 80)
+
+            active_count = 0
+            completed_count = 0
+            error_count = 0
+
+            for directory in directories:
+                dir_name = os.path.basename(directory)
+                status = processing_status.get(directory, {})
+
+                if not status:
+                    print(f"{WARNING}{dir_name}: Waiting to start{RESET}")
+                    continue
+
+                message = status.get("message", "Unknown")
+                timestamp = status.get("timestamp", "Unknown")
+                status_type = status.get("type", "info")
+
+                if status_type == "success":
+                    print(f"{SUCCESS}{dir_name}: {message} ({timestamp}){RESET}")
+                    completed_count += 1
+                elif status_type == "error":
+                    print(f"{ERROR}{dir_name}: {message} ({timestamp}){RESET}")
+                    error_count += 1
+                else:
+                    print(f"{INFO}{dir_name}: {message} ({timestamp}){RESET}")
+                    active_count += 1
+
+            print("-" * 80)
+            print(
+                f"{INFO}Summary: {active_count} active, {completed_count} completed, {error_count} failed{RESET}"
+            )
+            print("=" * 80 + "\n")
 
 
 if __name__ == "__main__":
