@@ -1,6 +1,7 @@
 colorama==0.4.6
 librosa==0.10.2.post1
 numpy==2.2.3
+psutil==5.9.8
 questionary==2.1.0
 scipy==1.15.2
 sounddevice==0.5.1
