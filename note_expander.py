@@ -915,6 +915,11 @@ def generate_chords(
                                         note, octave, semitones[inv_num]
                                     )
 
+                                    # Add additional debug log
+                                    tqdm.write(
+                                        f"{INFO}    Generating inversion {inv_num} for {chord_name} with new root {new_root}{new_octave}{RESET}"
+                                    )
+
                                     # Try to generate the inverted chord using the inverted semitones and new root
                                     inv_chord_audio, inv_sr = generate_chord(
                                         new_root,
