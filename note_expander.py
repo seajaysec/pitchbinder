@@ -1,11 +1,15 @@
 import argparse
+import concurrent.futures
 import csv
+import multiprocessing
 import os
 import re
 import sys
+import threading
 
 import librosa
 import numpy as np
+import psutil
 import questionary
 import sounddevice as sd
 import soundfile as sf
@@ -46,6 +50,42 @@ custom_style = QStyle(
         ),  # disabled choices for select and checkbox prompts
     ]
 )
+
+# Global lock for tqdm progress bars to avoid display issues in multi-threading
+tqdm_lock = threading.Lock()
+
+
+def get_optimal_workers():
+    """Determine the optimal number of worker threads based on system resources.
+
+    Returns a reasonable number of workers based on CPU cores and available memory,
+    with safeguards to prevent system overload.
+    """
+    # Get system information
+    cpu_count = multiprocessing.cpu_count()
+    memory = psutil.virtual_memory()
+
+    # Base number of workers on CPU cores
+    # Use N-1 cores on systems with more than 4 cores to leave one core for the OS
+    if cpu_count > 4:
+        workers = cpu_count - 1
+    else:
+        workers = max(1, cpu_count // 2)
+
+    # Adjust based on available memory
+    # Audio processing can be memory-intensive, so limit workers if memory is low
+    memory_gb = memory.available / (1024 * 1024 * 1024)
+
+    # Estimate ~2GB per worker for audio processing
+    memory_limited_workers = max(1, int(memory_gb / 2))
+
+    # Take the smaller of the two calculations
+    workers = min(workers, memory_limited_workers)
+
+    # Never use more than 8 workers to prevent system overload
+    workers = min(workers, 8)
+
+    return max(1, workers)  # Always return at least 1 worker
 
 
 def print_header(text):
@@ -2220,6 +2260,45 @@ def interactive_mode():
         "Process all subdirectories recursively?", default=False, style=custom_style
     ).ask()
 
+    # Ask about parallelization only if recursive mode is selected
+    use_parallel = False
+    max_workers = 1
+    if recurse:
+        use_parallel = questionary.confirm(
+            "Process directories in parallel? (Faster but uses more system resources)",
+            default=True,
+            style=custom_style,
+        ).ask()
+
+        if use_parallel:
+            # Calculate optimal number of workers based on system resources
+            optimal_workers = get_optimal_workers()
+
+            # Let user adjust the number of workers or use the suggested value
+            max_workers_options = [
+                f"Automatic ({optimal_workers} worker{'s' if optimal_workers > 1 else ''})",
+                "Custom number...",
+            ]
+
+            worker_choice = questionary.select(
+                "How many parallel workers to use?",
+                choices=max_workers_options,
+                style=custom_style,
+            ).ask()
+
+            if worker_choice.startswith("Automatic"):
+                max_workers = optimal_workers
+            else:
+                # Get custom number from user
+                max_workers = questionary.text(
+                    f"Enter number of workers (1-{multiprocessing.cpu_count()}):",
+                    default=str(optimal_workers),
+                    validate=lambda text: text.isdigit()
+                    and 1 <= int(text) <= multiprocessing.cpu_count(),
+                    style=custom_style,
+                ).ask()
+                max_workers = int(max_workers)
+
     # Ask about prefix
     use_custom_prefix = questionary.confirm(
         "Use a custom prefix for generated files? (Otherwise auto-detect)",
@@ -2304,6 +2383,10 @@ def interactive_mode():
     print_info("\nYour selected settings:")
     print(f"Source directory: {source_dir}")
     print(f"Recursive mode: {recurse}")
+    if recurse and use_parallel:
+        print(f"Parallel processing: Yes ({max_workers} workers)")
+    else:
+        print("Parallel processing: No")
     print(f"Custom prefix: {prefix if prefix else 'Auto-detect'}")
     print(f"Generate full sample: {options_dict['gen_full']}")
     print(f"Time match: {options_dict['time_match']}")
@@ -2345,32 +2428,102 @@ def interactive_mode():
             f"Found {len(directories)} directories to process (excluding expansion and output directories)"
         )
 
-        # Process each directory
-        for directory in directories:
-            # Create expansion subdirectory for output
-            target_dir = os.path.join(directory, "expansion")
+        # Process directories sequentially or in parallel
+        if use_parallel and max_workers > 1:
+            print_info(f"Processing directories in parallel with {max_workers} workers")
 
-            # Delete existing expansion directory if overwrite is enabled
-            if options_dict["overwrite"] and os.path.exists(target_dir):
-                print_info(f"Removing existing expansion directory: {target_dir}")
-                import shutil
+            # Create a list of processing tasks
+            processing_tasks = []
+            for directory in directories:
+                # Create expansion subdirectory for output
+                target_dir = os.path.join(directory, "expansion")
 
-                shutil.rmtree(target_dir)
+                # Delete existing expansion directory if overwrite is enabled
+                if options_dict["overwrite"] and os.path.exists(target_dir):
+                    print_info(f"Removing existing expansion directory: {target_dir}")
+                    import shutil
 
-            process_directory(
-                source_dir=directory,
-                target_dir=target_dir,
-                prefix=prefix,
-                play=options_dict["play"],
-                gen_full=options_dict["gen_full"],
-                time_match=options_dict["time_match"],
-                chords=options_dict["chords"],
-                keep_artifacts=options_dict["keep_artifacts"],
-                chord_qualities=chord_qualities,
-                generate_inversions=generate_inversions,
-            )
+                    shutil.rmtree(target_dir)
+
+                # Add task parameters to list
+                processing_tasks.append(
+                    {
+                        "source_dir": directory,
+                        "target_dir": target_dir,
+                        "prefix": prefix,
+                        "play": False,  # Disable play in parallel mode for safety
+                        "gen_full": options_dict["gen_full"],
+                        "time_match": options_dict["time_match"],
+                        "chords": options_dict["chords"],
+                        "keep_artifacts": options_dict["keep_artifacts"],
+                        "chord_qualities": chord_qualities,
+                        "generate_inversions": generate_inversions,
+                    }
+                )
+
+            # Process directories in parallel
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_workers
+            ) as executor:
+                # Submit all tasks
+                futures = [
+                    executor.submit(process_directory_wrapper, **task)
+                    for task in processing_tasks
+                ]
+
+                # Create a progress bar to track overall completion
+                with tqdm(
+                    total=len(futures),
+                    desc="Processing directories",
+                    position=0,
+                    leave=True,
+                ) as pbar:
+                    for future in concurrent.futures.as_completed(futures):
+                        try:
+                            # Get the result (will raise exception if the task failed)
+                            result = future.result()
+                            pbar.update(1)
+                        except Exception as e:
+                            print_error(f"Error processing directory: {e}")
+
+            # Play all notes if requested after all processing is complete
+            if options_dict["play"]:
+                print_info(
+                    "Processing complete. Playing samples from the first directory..."
+                )
+                first_dir = directories[0]
+                first_target_dir = os.path.join(first_dir, "expansion")
+
+                # Get all samples in the expansion directory
+                all_samples = get_all_wav_files(first_target_dir)
+                play_all_notes(all_samples, first_dir, first_target_dir)
+        else:
+            # Process each directory sequentially (original behavior)
+            for directory in directories:
+                # Create expansion subdirectory for output
+                target_dir = os.path.join(directory, "expansion")
+
+                # Delete existing expansion directory if overwrite is enabled
+                if options_dict["overwrite"] and os.path.exists(target_dir):
+                    print_info(f"Removing existing expansion directory: {target_dir}")
+                    import shutil
+
+                    shutil.rmtree(target_dir)
+
+                process_directory(
+                    source_dir=directory,
+                    target_dir=target_dir,
+                    prefix=prefix,
+                    play=options_dict["play"],
+                    gen_full=options_dict["gen_full"],
+                    time_match=options_dict["time_match"],
+                    chords=options_dict["chords"],
+                    keep_artifacts=options_dict["keep_artifacts"],
+                    chord_qualities=chord_qualities,
+                    generate_inversions=generate_inversions,
+                )
     else:
-        # Process just the single directory
+        # Process just the single directory (no parallelization needed)
         # Create expansion subdirectory for output
         target_dir = os.path.join(source_dir, "expansion")
 
@@ -2395,6 +2548,19 @@ def interactive_mode():
         )
 
     print_success("Processing complete!")
+
+
+def process_directory_wrapper(**kwargs):
+    """Wrapper for process_directory to handle thread safety and exceptions."""
+    try:
+        # Acquire lock when printing with tqdm to avoid display issues
+        with tqdm_lock:
+            return process_directory(**kwargs)
+    except Exception as e:
+        print_error(
+            f"Error processing directory {kwargs.get('source_dir', 'unknown')}: {str(e)}"
+        )
+        raise e
 
 
 def main():
