@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import threading
+import time
 
 import librosa
 import numpy as np
@@ -53,6 +54,39 @@ custom_style = QStyle(
 
 # Global lock for tqdm progress bars to avoid display issues in multi-threading
 tqdm_lock = threading.Lock()
+
+# Global status dictionary to track progress of each directory
+processing_status = {}
+status_lock = threading.Lock()
+
+
+def update_status(directory, message, status_type="info"):
+    """Update the status of a directory processing task."""
+    with status_lock:
+        timestamp = time.strftime("%H:%M:%S", time.localtime())
+        processing_status[directory] = {
+            "message": message,
+            "timestamp": timestamp,
+            "type": status_type,
+        }
+
+        # Print the update with appropriate color
+        if status_type == "info":
+            print(
+                f"{INFO}[{timestamp}] {os.path.basename(directory)}: {message}{RESET}"
+            )
+        elif status_type == "success":
+            print(
+                f"{SUCCESS}[{timestamp}] {os.path.basename(directory)}: {message}{RESET}"
+            )
+        elif status_type == "warning":
+            print(
+                f"{WARNING}[{timestamp}] {os.path.basename(directory)}: {message}{RESET}"
+            )
+        elif status_type == "error":
+            print(
+                f"{ERROR}[{timestamp}] {os.path.basename(directory)}: {message}{RESET}"
+            )
 
 
 def get_optimal_workers():
