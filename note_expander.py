@@ -705,28 +705,39 @@ def generate_chords(
                         # Generate inversions for this chord if requested
                         if generate_inversions and inversions:
                             for inv_num, inv_semitones in inversions:
-                                # Generate the inverted chord
-                                inv_chord_audio, inv_sr = generate_chord(
-                                    note,
-                                    octave,
-                                    inv_semitones,
-                                    all_samples,
-                                    source_dir,
-                                    target_dir,
-                                    prefix,
-                                    chord_duration_factor=4.0,
+                                # Check if the highest note in the inverted chord would be above B8
+                                highest_inv_semitone = max(inv_semitones)
+                                highest_inv_note, highest_inv_octave = get_note_from_semitone(
+                                    note, octave, highest_inv_semitone
                                 )
-
-                                if inv_chord_audio is not None:
-                                    # Save the inverted chord with inversion number in filename
-                                    inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
-                                    inv_chord_path = os.path.join(
-                                        inversions_dir, inv_chord_filename
+                                if highest_inv_octave > 8:
+                                    tqdm.write(f"{WARNING}    Skipping {inv_num}stInv-{note}{octave} - highest note would be above B8{RESET}")
+                                    continue
+                                
+                                try:
+                                    # Generate the inverted chord
+                                    inv_chord_audio, inv_sr = generate_chord(
+                                        note,
+                                        octave,
+                                        inv_semitones,
+                                        all_samples,
+                                        source_dir,
+                                        target_dir,
+                                        prefix,
+                                        chord_duration_factor=4.0,
                                     )
-                                    sf.write(inv_chord_path, inv_chord_audio, inv_sr)
-                                    tqdm.write(
-                                        f"{SUCCESS}    Generated {inv_chord_filename}{RESET}"
-                                    )
+                                    
+                                    if inv_chord_audio is not None:
+                                        # Save the inverted chord with inversion number in filename
+                                        inv_chord_filename = (
+                                            f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
+                                        )
+                                        inv_chord_path = os.path.join(inversions_dir, inv_chord_filename)
+                                        sf.write(inv_chord_path, inv_chord_audio, inv_sr)
+                                        tqdm.write(f"{SUCCESS}    Generated {inv_chord_filename}{RESET}")
+                                except Exception as e:
+                                    tqdm.write(f"{WARNING}    Could not generate {inv_num}stInv-{note}{octave}: {str(e)}{RESET}")
+                                    continue
 
                     # Update the master progress bar
                     master_pbar.update(1)
@@ -852,6 +863,9 @@ def generate_chords(
                             # Generate inversions for this chord if requested
                             if generate_inversions and inversions:
                                 for inv_num, inv_semitones in inversions:
+                                    # Check if the highest note in the inverted chord would be above B8
+                                    highest_inv_semitone = max(inv_semitones)
+                                    highest_inv_note, highest_inv_octave = get_note_from_semitone(
                                     # Generate the inverted chord by pitch shifting
                                     inv_chord_audio, inv_sr = generate_chord(
                                         note,
