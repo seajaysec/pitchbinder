@@ -705,23 +705,28 @@ def generate_chords(
                         # Generate inversions for this chord if requested
                         if generate_inversions and inversions:
                             for inv_num, inv_semitones in inversions:
-                                # Instead of generating the inverted chord from scratch,
-                                # we'll use the chord we just created as a starting point
-                                inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
-                                inv_chord_path = os.path.join(
-                                    inversions_dir, inv_chord_filename
+                                # Generate the inverted chord using the inverted semitones
+                                inv_chord_audio, inv_sr = generate_chord(
+                                    note,
+                                    octave,
+                                    inv_semitones,
+                                    all_samples,
+                                    source_dir,
+                                    target_dir,
+                                    prefix,
+                                    chord_duration_factor=4.0,
                                 )
 
-                                # Create the inverted chord audio
-                                inv_chord_audio = invert_chord_audio(
-                                    chord_audio, inv_num, len(semitones)
-                                )
-
-                                # Save the inverted chord
-                                sf.write(inv_chord_path, inv_chord_audio, sr)
-                                tqdm.write(
-                                    f"{SUCCESS}    Generated {inv_chord_filename}{RESET}"
-                                )
+                                if inv_chord_audio is not None:
+                                    # Save the inverted chord with inversion number in filename
+                                    inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
+                                    inv_chord_path = os.path.join(
+                                        inversions_dir, inv_chord_filename
+                                    )
+                                    sf.write(inv_chord_path, inv_chord_audio, inv_sr)
+                                    tqdm.write(
+                                        f"{SUCCESS}    Generated {inv_chord_filename}{RESET}"
+                                    )
 
                     # Update the master progress bar
                     master_pbar.update(1)
@@ -847,23 +852,31 @@ def generate_chords(
                             # Generate inversions for this chord if requested
                             if generate_inversions and inversions:
                                 for inv_num, inv_semitones in inversions:
-                                    # Instead of generating the inverted chord from scratch,
-                                    # we'll use the chord we just created as a starting point
-                                    inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
-                                    inv_chord_path = os.path.join(
-                                        inversions_dir, inv_chord_filename
+                                    # For pitch-shifted chords, we need to use the same approach
+                                    # Find the closest core chord to use as source
+                                    inv_chord_audio, inv_sr = generate_chord(
+                                        note,
+                                        octave,
+                                        inv_semitones,
+                                        all_samples,
+                                        source_dir,
+                                        target_dir,
+                                        prefix,
+                                        chord_duration_factor=4.0,
                                     )
 
-                                    # Create the inverted chord audio
-                                    inv_chord_audio = invert_chord_audio(
-                                        new_audio, inv_num, len(semitones)
-                                    )
-
-                                    # Save the inverted chord
-                                    sf.write(inv_chord_path, inv_chord_audio, sr)
-                                    tqdm.write(
-                                        f"{SUCCESS}    Generated {inv_chord_filename} (pitch-shifted){RESET}"
-                                    )
+                                    if inv_chord_audio is not None:
+                                        # Save the inverted chord with inversion number in filename
+                                        inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
+                                        inv_chord_path = os.path.join(
+                                            inversions_dir, inv_chord_filename
+                                        )
+                                        sf.write(
+                                            inv_chord_path, inv_chord_audio, inv_sr
+                                        )
+                                        tqdm.write(
+                                            f"{SUCCESS}    Generated {inv_chord_filename} (pitch-shifted){RESET}"
+                                        )
 
                     # Update the master progress bar
                     master_pbar.update(1)
