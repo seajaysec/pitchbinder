@@ -27,7 +27,7 @@ The script can detect notes and octaves from filenames in formats like:
 - `Piano-C4.wav`
 - `Grand Piano-F#3.wav`
 - `MyPiano-G#5.wav`
-- `CP70-A2.wav`
+- `CP70-Ab2.wav`
 
 As long as the filename contains a note letter (A-G), optional sharp (#), and octave number, it will be detected.
 
