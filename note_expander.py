@@ -1459,10 +1459,20 @@ def generate_full_chord_samples(chord_dir, prefix):
 
     # Group chord files by chord type
     chord_types = {}
+    inversion_types = {}
 
     for chord_file in chord_files:
         filename = os.path.basename(chord_file)
-        quality = os.path.basename(os.path.dirname(chord_file))
+        dir_name = os.path.basename(os.path.dirname(chord_file))
+
+        # Check if this is an inversion
+        is_inversion = "inversions" in os.path.dirname(chord_file)
+
+        # If it's in an inversions directory, get the parent quality directory
+        if is_inversion:
+            quality = os.path.basename(os.path.dirname(os.path.dirname(chord_file)))
+        else:
+            quality = dir_name
 
         # Extract note and chord type
         note_match = re.search(r"([A-G]#?\d+)\.wav$", filename)
@@ -1471,26 +1481,49 @@ def generate_full_chord_samples(chord_dir, prefix):
 
         note_str = note_match.group(1)
 
-        # Extract chord type
-        chord_match = re.search(rf"{prefix}-(.+)-{note_str}\.wav$", filename)
-        if not chord_match:
-            continue
+        # Extract chord type and inversion info
+        if is_inversion:
+            # Pattern for inversions: prefix-ChordType-InversionNum-NoteOctave.wav
+            chord_match = re.search(
+                rf"{prefix}-(.+)-(\d+stInv)-{note_str}\.wav$", filename
+            )
+            if not chord_match:
+                continue
 
-        chord_type = chord_match.group(1)
+            chord_type = chord_match.group(1)
+            inversion_num = chord_match.group(2)
 
-        # Create a key for this chord type
-        key = (quality, chord_type)
+            # Create a key for this inversion type
+            key = (quality, chord_type, inversion_num)
 
-        if key not in chord_types:
-            chord_types[key] = []
+            if key not in inversion_types:
+                inversion_types[key] = []
 
-        chord_types[key].append(chord_file)
+            inversion_types[key].append(chord_file)
+        else:
+            # Regular chord pattern: prefix-ChordType-NoteOctave.wav
+            chord_match = re.search(rf"{prefix}-(.+)-{note_str}\.wav$", filename)
+            if not chord_match:
+                continue
 
-    tqdm.write(f"{INFO}Found {len(chord_types)} chord types to process{RESET}")
+            chord_type = chord_match.group(1)
+
+            # Create a key for this chord type
+            key = (quality, chord_type)
+
+            if key not in chord_types:
+                chord_types[key] = []
+
+            chord_types[key].append(chord_file)
+
+    total_types = len(chord_types) + len(inversion_types)
+    tqdm.write(
+        f"{INFO}Found {len(chord_types)} chord types and {len(inversion_types)} inversion types to process{RESET}"
+    )
 
     # Create a progress bar for chord types
     pbar = tqdm(
-        total=len(chord_types),
+        total=total_types,
         desc="Creating full chord samples",
         position=0,
         leave=True,
@@ -1500,6 +1533,7 @@ def generate_full_chord_samples(chord_dir, prefix):
     # Process each chord type
     full_chord_filenames = []
 
+    # Process regular chords
     for (quality, chord_type), files in chord_types.items():
         # Sort files by note and octave
         def sort_key(filepath):
