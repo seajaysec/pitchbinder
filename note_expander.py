@@ -1318,6 +1318,7 @@ def process_directory(
     chords=False,
     keep_artifacts=False,
     chord_qualities=None,
+    generate_inversions=False,
 ):
     """Process a single directory to generate missing samples."""
     print_header(f"Processing directory: {source_dir}")
@@ -1385,7 +1386,7 @@ def process_directory(
             chord_dir,
             target_dir,  # Pass the expansion directory
             chord_qualities=chord_qualities,
-            generate_inversions=True,
+            generate_inversions=generate_inversions,
         )
 
     # Generate full sample file if requested
@@ -1777,6 +1778,7 @@ def interactive_mode():
 
     # If chord generation is selected, ask for more details
     chord_qualities = None
+    generate_inversions = False
     if options_dict["chords"]:
         chord_mode = questionary.select(
             "How would you like to generate chords?",
@@ -1802,6 +1804,14 @@ def interactive_mode():
                 )
                 options_dict["chords"] = False
 
+        # Ask about inversions if chord generation is still enabled
+        if options_dict["chords"]:
+            generate_inversions = questionary.confirm(
+                "Generate chord inversions? (This will create all possible inversions for each chord)",
+                default=False,
+                style=custom_style,
+            ).ask()
+
     # Confirm settings
     print_info("\nYour selected settings:")
     print(f"Source directory: {source_dir}")
@@ -1815,6 +1825,7 @@ def interactive_mode():
             print(f"Chord qualities: {', '.join(chord_qualities)}")
         else:
             print("Generating all chord types")
+        print(f"Generate inversions: {generate_inversions}")
     print(f"Play notes: {options_dict['play']}")
     print(f"Overwrite existing: {options_dict['overwrite']}")
     print(f"Keep artifacts: {options_dict['keep_artifacts']}")
@@ -1868,6 +1879,7 @@ def interactive_mode():
                 chords=options_dict["chords"],
                 keep_artifacts=options_dict["keep_artifacts"],
                 chord_qualities=chord_qualities,
+                generate_inversions=generate_inversions,
             )
     else:
         # Process just the single directory
@@ -1891,6 +1903,7 @@ def interactive_mode():
             chords=options_dict["chords"],
             keep_artifacts=options_dict["keep_artifacts"],
             chord_qualities=chord_qualities,
+            generate_inversions=generate_inversions,
         )
 
     print_success("Processing complete!")
