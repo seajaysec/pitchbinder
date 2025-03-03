@@ -732,9 +732,13 @@ def generate_chords(
                                     inversions_dir, inv_chord_filename
                                 )
 
-                                # We already have the chord audio, so we'll use that
-                                # This avoids trying to access files that might not exist
-                                sf.write(inv_chord_path, chord_audio, sr)
+                                # Create the inverted chord audio
+                                inv_chord_audio = invert_chord_audio(
+                                    chord_audio, inv_num, len(semitones)
+                                )
+
+                                # Save the inverted chord
+                                sf.write(inv_chord_path, inv_chord_audio, sr)
                                 tqdm.write(
                                     f"{SUCCESS}    Generated {inv_chord_filename}{RESET}"
                                 )
@@ -870,9 +874,13 @@ def generate_chords(
                                         inversions_dir, inv_chord_filename
                                     )
 
-                                    # We already have the new_audio, so we'll use that
-                                    # This avoids trying to access files that might not exist
-                                    sf.write(inv_chord_path, new_audio, sr)
+                                    # Create the inverted chord audio
+                                    inv_chord_audio = invert_chord_audio(
+                                        new_audio, inv_num, len(semitones)
+                                    )
+
+                                    # Save the inverted chord
+                                    sf.write(inv_chord_path, inv_chord_audio, sr)
                                     tqdm.write(
                                         f"{SUCCESS}    Generated {inv_chord_filename} (pitch-shifted){RESET}"
                                     )
