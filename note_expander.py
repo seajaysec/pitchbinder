@@ -114,18 +114,42 @@ def parse_note_from_filename(filename):
 
 
 def get_note_frequency(note, octave):
-    """Calculate frequency for a given note and octave."""
+    """
+    Calculate the frequency of a note based on its name and octave.
+    A4 (440 Hz) is used as the reference.
+    """
     notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+    # Handle flat notes by converting to their sharp equivalents
+    if note.endswith("b"):
+        flat_to_sharp = {
+            "Cb": "B",
+            "Db": "C#",
+            "Eb": "D#",
+            "Fb": "E",
+            "Gb": "F#",
+            "Ab": "G#",
+            "Bb": "A#",
+        }
+        if note in flat_to_sharp:
+            note = flat_to_sharp[note]
+            if note == "B":  # Special case: Cb is B in the previous octave
+                octave -= 1
+
+    # A4 is the reference note at 440 Hz
+    A4_FREQ = 440.0
+    A4_NOTE_INDEX = notes.index("A")
+    A4_OCTAVE = 4
+
+    # Calculate the number of semitones from A4
     note_index = notes.index(note)
+    semitones_from_a4 = (octave - A4_OCTAVE) * 12 + (note_index - A4_NOTE_INDEX)
 
-    # A4 is 440Hz
-    a4_freq = 440.0
-    a4_index = notes.index("A") + (4 * 12)
-    note_index_full = note_index + (octave * 12)
+    # Calculate the frequency using the equal temperament formula
+    # f = f_ref * 2^(n/12) where n is the number of semitones from the reference note
+    frequency = A4_FREQ * (2 ** (semitones_from_a4 / 12))
 
-    # Calculate frequency using equal temperament formula
-    half_steps = note_index_full - a4_index
-    return a4_freq * (2 ** (half_steps / 12.0))
+    return frequency
 
 
 def get_all_wav_files(directory="."):
