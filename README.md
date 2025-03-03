@@ -25,7 +25,7 @@ Note Expander analyzes your existing samples, identifies the notes they represen
 
 The script can detect notes and octaves from filenames in formats like:
 - `Piano-C4.wav`
-- `Grand Piano-F#3.wav`
+- `Meowsic-F#3.wav`
 - `MyPiano-G#5.wav`
 - `CP70-Ab2.wav`
 
