@@ -14,7 +14,7 @@ Traditional audio tools and DAWs offer pitch-shifting capabilities, but they com
 
 - **Limited Range**: Many pitch-shifting algorithms struggle with extreme shifts (e.g., moving multiple octaves from the source). The audio quality deteriorates quickly, introducing artifacts and losing the original character of the instrument.
 
-- **Clunky Chord Creation**: Creating chords in a DAW often requires manually placing and tuning multiple samples. This process is time-consuming and difficult to adjust, especially when working with multiple chord types and inversions.
+- **Clunky Chord Creation**: Creating chords often requires manually placing and tuning multiple samples. This process is time-consuming and difficult to adjust, especially when working with multiple chord types and inversions.
 
 - **Workflow Complexity**: Setting up a full instrument with proper velocity layers, round-robin samples, and chord variations can require hundreds of manual adjustments in traditional workflows.
 
