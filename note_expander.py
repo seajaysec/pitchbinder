@@ -418,12 +418,18 @@ def generate_chord(
 
                 try:
                     # Load the closest sample
-                    audio, sr = librosa.load(closest_path, sr=None)
+                    if closest_path:  # Ensure path is not None
+                        audio, sr = librosa.load(closest_path, sr=None)
+                        print_info(f"  Successfully loaded closest sample")
+                    else:
+                        print_error(f"  Error: closest_path is None")
+                        continue
 
                     # Pitch shift to the target note
                     audio, sr = pitch_shift_sample(
                         audio, sr, closest_note, closest_octave, note, octave
                     )
+                    print_info(f"  Successfully pitch-shifted to {note}{octave}")
 
                     # Trim silence at the beginning to ensure all notes start together
                     # Ensure audio is a numpy array
@@ -448,33 +454,48 @@ def generate_chord(
 
                     note_audios.append(audio)
                     max_length = max(max_length, len(audio))
+                    print_info(f"  Successfully processed note for chord")
                     continue
                 except Exception as e:
-                    print(f"Warning: Could not load closest sample: {e}")
+                    print_error(f"  Error processing closest sample: {str(e)}")
                     continue
+            else:
+                print_warning(
+                    f"  Warning: Could not find a suitable sample for {note}{octave} in chord"
+                )
+                continue
 
-        # Load the audio for this note
-        audio, _ = librosa.load(note_path, sr=sr)
+        try:
+            # Load the audio for this note
+            audio, _ = librosa.load(note_path, sr=sr)
+            print_info(f"  Successfully loaded note")
 
-        # Trim silence at the beginning to ensure all notes start together
-        # Ensure audio is a numpy array
-        if isinstance(audio, tuple):
-            audio = audio[0]
+            # Trim silence at the beginning to ensure all notes start together
+            # Ensure audio is a numpy array
+            if isinstance(audio, tuple):
+                audio = audio[0]
 
-        # Convert to float64 for librosa.effects.trim
-        audio_float = audio.astype(np.float64) if hasattr(audio, "astype") else audio
-        audio_trimmed, _ = librosa.effects.trim(
-            audio_float, top_db=30, frame_length=512, hop_length=128
-        )
+            # Convert to float64 for librosa.effects.trim
+            audio_float = (
+                audio.astype(np.float64) if hasattr(audio, "astype") else audio
+            )
+            audio_trimmed, _ = librosa.effects.trim(
+                audio_float, top_db=30, frame_length=512, hop_length=128
+            )
 
-        # Make sure we're working with a numpy array, not a tuple
-        if isinstance(audio_trimmed, tuple):
-            audio = audio_trimmed[0]  # Extract the audio data from the tuple
-        else:
-            audio = audio_trimmed
+            # Make sure we're working with a numpy array, not a tuple
+            if isinstance(audio_trimmed, tuple):
+                audio = audio_trimmed[0]  # Extract the audio data from the tuple
+            else:
+                audio = audio_trimmed
 
-        note_audios.append(audio)
-        max_length = max(max_length, len(audio))
+            note_audios.append(audio)
+            max_length = max(max_length, len(audio))
+            print_info(f"  Successfully processed note for chord")
+            continue
+        except Exception as e:
+            print_error(f"  Error processing note: {str(e)}")
+            continue
 
     if not note_audios:
         print(
