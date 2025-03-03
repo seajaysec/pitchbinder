@@ -1565,21 +1565,55 @@ def cleanup_artifacts(
     # Now remove the artifact directories
     import shutil
 
+    def robust_rmtree(directory):
+        """Attempt to remove a directory more aggressively if standard rmtree fails."""
+        try:
+            shutil.rmtree(directory)
+            return True
+        except OSError as e:
+            print_warning(f"Initial removal of {directory} failed: {e}")
+            print_info("Attempting more aggressive cleanup...")
+
+            try:
+                # Manually remove files first
+                for root, dirs, files in os.walk(directory, topdown=False):
+                    for file in files:
+                        try:
+                            file_path = os.path.join(root, file)
+                            os.unlink(file_path)
+                            print_info(f"Removed file: {file_path}")
+                        except Exception as e:
+                            print_warning(f"Could not remove file {file_path}: {e}")
+
+                    # Then try to remove directories
+                    for dir in dirs:
+                        try:
+                            dir_path = os.path.join(root, dir)
+                            os.rmdir(dir_path)
+                            print_info(f"Removed directory: {dir_path}")
+                        except Exception as e:
+                            print_warning(f"Could not remove directory {dir_path}: {e}")
+
+                # Try to remove the main directory again
+                os.rmdir(directory)
+                print_success(
+                    f"Successfully removed {directory} after aggressive cleanup"
+                )
+                return True
+            except OSError as e:
+                print_warning(
+                    f"Could not completely remove {directory} even after aggressive cleanup: {e}"
+                )
+                print_info("Continuing anyway as this won't affect the results.")
+                return False
+
     if os.path.exists(target_dir):
         print_info(f"Removing expansion directory: {target_dir}")
-        try:
-            shutil.rmtree(target_dir)
-        except OSError as e:
-            print_warning(f"Could not completely remove {target_dir}: {e}")
-            print_info("Continuing anyway as this won't affect the results.")
+        robust_rmtree(target_dir)
 
     if chord_dir and os.path.exists(chord_dir):
         print_info(f"Removing chord directory: {chord_dir}")
-        try:
-            shutil.rmtree(chord_dir)
-        except OSError as e:
-            print_warning(f"Could not completely remove {chord_dir}: {e}")
-            print_info("Continuing anyway as this won't affect the results.")
+        robust_rmtree(chord_dir)
 
     print_success("Artifact cleanup complete")
 
