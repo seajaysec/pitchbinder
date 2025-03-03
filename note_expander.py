@@ -1925,6 +1925,142 @@ def generate_full_chord_samples(chord_dir, prefix):
 
         pbar.update(1)
 
+    # Process inversion types - THIS IS THE ADDED CODE
+    for (quality, chord_type, inversion_num), files in inversion_types.items():
+        # Sort files by note and octave using the same sort function as before
+        sorted_files = sorted(files, key=sort_key)
+
+        # Skip if no files found
+        if not sorted_files:
+            tqdm.write(
+                f"{WARNING}No inversion files found for {quality} {chord_type} {inversion_num}{RESET}"
+            )
+            continue
+
+        # Load the first file to get sample rate
+        first_audio, sr = librosa.load(sorted_files[0], sr=None)
+
+        # Calculate silence duration (0.5 seconds)
+        silence_duration = int(0.5 * sr)
+        silence = np.zeros(silence_duration)
+
+        # Prepare for combined audio
+        combined_audio = np.array([])
+
+        # Prepare for slice markers
+        cue_positions = []  # Store (label, position) tuples
+        current_position = 0  # in samples
+
+        # Process each inversion file
+        for i, inversion_file in enumerate(sorted_files):
+            # Extract note info for slice marker
+            filename = os.path.basename(inversion_file)
+            note_match = re.search(r"([A-G]#?\d+)\.wav$", filename)
+            note_str = note_match.group(1) if note_match else "Unknown"
+
+            # Load the audio
+            audio, _ = librosa.load(inversion_file, sr=sr)
+
+            # Trim silence at the beginning and end
+            # Ensure audio is a numpy array
+            if isinstance(audio, tuple):
+                audio = audio[0]
+
+            # Convert to float64 for librosa.effects.trim
+            audio_float = (
+                audio.astype(np.float64) if hasattr(audio, "astype") else audio
+            )
+            audio, _ = librosa.effects.trim(audio_float, top_db=30)
+
+            # Limit each sample to 3 seconds max
+            max_length = min(len(audio), 3 * sr)
+            audio = audio[:max_length]
+
+            # Add a fade out
+            fade_samples = min(
+                int(0.1 * sr), len(audio) // 4
+            )  # 100ms fade or 1/4 of length
+            if fade_samples > 0:
+                audio[-fade_samples:] *= np.linspace(1, 0, fade_samples)
+
+            # Record the start position of this inversion (in samples)
+            cue_positions.append((f"{note_str}", current_position))
+
+            # Add the inversion sample to the combined audio
+            combined_audio = np.concatenate([combined_audio, audio])
+
+            # Update current position for next slice marker
+            current_position += len(audio)
+
+            # Add silence between samples (but not after the last one)
+            if i < len(sorted_files) - 1:
+                combined_audio = np.concatenate([combined_audio, silence])
+                current_position += silence_duration
+
+        # Create a safe filename from the chord type and inversion number
+        safe_chord_type = re.sub(r"[^\w\-]", "_", chord_type)
+
+        # Create quality directory if it doesn't exist
+        quality_dir = os.path.join(chord_dir, quality)
+        if not os.path.exists(quality_dir):
+            os.makedirs(quality_dir)
+
+        # Create inversions directory
+        inversions_dir = os.path.join(quality_dir, "inversions")
+        if not os.path.exists(inversions_dir):
+            os.makedirs(inversions_dir)
+
+        # Save the combined audio with embedded slice markers
+        output_filename = f"{prefix}-{safe_chord_type}-{inversion_num}-Full.wav"
+        output_path = os.path.join(inversions_dir, output_filename)
+
+        # First save the audio data using soundfile
+        sf.write(output_path, combined_audio, sr)
+        print(
+            f"Generated full inversion sample file: {output_filename} (in exp directory)"
+        )
+
+        # Now add slice markers to the WAV file
+        try:
+            # Open the WAV file for reading and writing in binary mode
+            with wave.open(output_path, "rb") as wav_read:
+                params = wav_read.getparams()
+                frames = wav_read.readframes(wav_read.getnframes())
+
+            # Create a new WAV file with slice markers
+            with wave.open(output_path + ".temp", "wb") as wav_write:
+                wav_write.setparams(params)
+
+                # Write the audio data
+                wav_write.writeframes(frames)
+
+                # Add cue chunk
+                cue_chunk = create_cue_chunk(cue_positions)
+
+                # We need to manually add the cue chunk to the file
+                with open(output_path + ".temp", "ab") as f:
+                    f.write(b"cue ")  # Chunk ID
+                    f.write(struct.pack("<I", len(cue_chunk)))  # Chunk size
+                    f.write(cue_chunk)  # Chunk data
+
+            # Replace the original file with the new one
+            os.replace(output_path + ".temp", output_path)
+            tqdm.write(
+                f"{SUCCESS}Added {len(cue_positions)} slice markers to {output_filename}{RESET}"
+            )
+
+        except Exception as e:
+            tqdm.write(f"{WARNING}Could not add slice markers to WAV file: {e}{RESET}")
+
+        # Store the quality, subdir, and filename for later use
+        full_chord_filenames.append((quality, "inversions", output_filename))
+
+        tqdm.write(
+            f"{SUCCESS}Generated full sample for {quality} {chord_type} {inversion_num}: {output_filename}{RESET}"
+        )
+
+        pbar.update(1)
+
     pbar.close()
 
     tqdm.write(
