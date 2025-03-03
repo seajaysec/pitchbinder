@@ -1289,12 +1289,22 @@ def cleanup_artifacts(
     # Copy chord files to their respective quality directories in exp/chords
     if full_chord_filenames and chord_dir:
         for chord_item in full_chord_filenames:
-            # Handle both tuple format (quality, filename) and string format (filename)
+            # Handle different formats of chord_item
             if isinstance(chord_item, tuple):
-                quality, chord_filename = chord_item
-                # Find the chord file in the chord directory structure
-                chord_path = os.path.join(chord_dir, quality, chord_filename)
+                if len(chord_item) == 3:
+                    # Format: (quality, "inversions", filename)
+                    quality, subdir, chord_filename = chord_item
+                    # Find the chord file in the chord directory structure
+                    chord_path = os.path.join(
+                        chord_dir, quality, subdir, chord_filename
+                    )
+                else:
+                    # Format: (quality, filename)
+                    quality, chord_filename = chord_item
+                    # Find the chord file in the chord directory structure
+                    chord_path = os.path.join(chord_dir, quality, chord_filename)
             else:
+                # Format: filename
                 chord_filename = chord_item
                 # Extract quality from the chord filename or use a default
                 quality_match = re.search(r"-([^-]+)-Full\.wav$", chord_filename)
@@ -1305,15 +1315,26 @@ def cleanup_artifacts(
                 chord_path = os.path.join(chord_dir, chord_filename)
 
             if os.path.exists(chord_path):
+                # Determine if this is an inversion
+                is_inversion = "inversions" in chord_path or "-stInv-" in chord_filename
+
                 # Create quality directory in exp/chords
                 quality_dir = os.path.join(chords_dir, quality)
                 if not os.path.exists(quality_dir):
                     os.makedirs(quality_dir)
 
+                # Create inversions directory if needed
+                if is_inversion:
+                    inversions_dir = os.path.join(quality_dir, "inversions")
+                    if not os.path.exists(inversions_dir):
+                        os.makedirs(inversions_dir)
+                    dest_path = os.path.join(inversions_dir, chord_filename)
+                else:
+                    dest_path = os.path.join(quality_dir, chord_filename)
+
                 # Copy the file
                 import shutil
 
-                dest_path = os.path.join(quality_dir, chord_filename)
                 shutil.copy2(chord_path, dest_path)
                 print_success(f"Copied chord file to {dest_path}")
 
