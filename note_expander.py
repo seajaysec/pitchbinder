@@ -365,6 +365,13 @@ def generate_chord(
     """Generate a chord sample by mixing multiple note samples."""
     notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
+    # Print information about the chord we're generating
+    print_info(
+        f"Generating chord with root {root_note}{root_octave} and semitones {semitones}"
+    )
+    print_info(f"Source directory: {source_dir}")
+    print_info(f"Target directory: {target_dir}")
+
     # Get the sample rate from the first available sample
     first_sample = all_samples[0]
 
@@ -386,7 +393,7 @@ def generate_chord(
                 break
 
     if not first_path:
-        print(
+        print_error(
             f"Error: Could not find any valid sample files in {source_dir} or {target_dir}"
         )
         return None, None
