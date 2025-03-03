@@ -1265,6 +1265,15 @@ def generate_missing_samples(
             bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.BLUE, RESET),
         )
 
+    # Update status
+    update_status(
+        source_dir, f"Preparing to generate {total_to_generate} missing samples", "info"
+    )
+
+    # Track progress for status updates
+    completed_samples = 0
+    last_status_update_percent = 0
+
     # Generate missing samples for all notes in octaves 1-8
     for octave in range(1, 9):
         for note in notes:
@@ -1376,6 +1385,26 @@ def generate_missing_samples(
             # Update the progress bar
             with tqdm_lock:
                 pbar.update(1)
+
+            # Update progress tracking
+            completed_samples += 1
+            progress_percent = (
+                int((completed_samples / total_to_generate) * 100)
+                if total_to_generate > 0
+                else 100
+            )
+
+            # Update status message at 10% increments
+            if (
+                progress_percent >= last_status_update_percent + 10
+                or completed_samples == total_to_generate
+            ):
+                last_status_update_percent = progress_percent
+                update_status(
+                    source_dir,
+                    f"Generated {completed_samples}/{total_to_generate} samples ({progress_percent}%)",
+                    "info",
+                )
 
     # Close the progress bar
     with tqdm_lock:
