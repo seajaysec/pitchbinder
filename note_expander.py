@@ -399,7 +399,10 @@ def generate_chord(
 
                 # Trim silence at the beginning to ensure all notes start together
                 audio_trimmed, _ = librosa.effects.trim(
-                    audio, top_db=30, frame_length=512, hop_length=128
+                    audio.astype(np.float64),
+                    top_db=30,
+                    frame_length=512,
+                    hop_length=128,
                 )
 
                 # Make sure we're working with a numpy array, not a tuple
@@ -422,7 +425,7 @@ def generate_chord(
 
         # Trim silence at the beginning to ensure all notes start together
         audio_trimmed, _ = librosa.effects.trim(
-            audio, top_db=30, frame_length=512, hop_length=128
+            audio.astype(np.float64), top_db=30, frame_length=512, hop_length=128
         )
 
         # Make sure we're working with a numpy array, not a tuple
@@ -1130,7 +1133,7 @@ def generate_full_sample(all_samples, prefix, source_dir, target_dir):
             # Detect and trim silence at the beginning and end
             # This helps prevent clicks without altering the actual sound
             non_silent = librosa.effects.trim(
-                audio,
+                audio.astype(np.float64),
                 top_db=40,  # Higher value = more aggressive trimming
                 frame_length=512,
                 hop_length=128,
