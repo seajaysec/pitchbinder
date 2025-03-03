@@ -6,32 +6,6 @@ A powerful tool for expanding a small set of piano samples into a complete 8-oct
 
 Note Expander takes a few piano samples with note information in their filenames and intelligently generates the missing notes across the full piano range (C1-B8). It uses high-quality pitch shifting and optional time stretching to create natural-sounding samples for all 88 piano keys.
 
-## Why Expand Notes
-
-Traditional audio tools and DAWs offer pitch-shifting capabilities, but they come with significant limitations when you're trying to create a complete instrument:
-
-- **Preserving Natural Duration**: Standard pitch-shifting typically speeds up samples when pitching higher and slows them down when pitching lower. This creates unnatural results when attempting to build an instrument across multiple octaves, as high notes become too short and low notes too long.
-
-- **Limited Range**: Many pitch-shifting algorithms struggle with extreme shifts (e.g., moving multiple octaves from the source). The audio quality deteriorates quickly, introducing artifacts and losing the original character of the instrument.
-
-- **Clunky Chord Creation**: Creating chords often requires manually placing and tuning multiple samples. This process is time-consuming and difficult to adjust, especially when working with multiple chord types and inversions.
-
-- **Workflow Complexity**: Setting up a full instrument with proper velocity layers, round-robin samples, and chord variations can require hundreds of manual adjustments in traditional workflows.
-
-Note Expander addresses these issues by:
-
-1. **Smart Sample Selection**: For each generated note, it finds the closest source sample to minimize pitch-shifting artifacts.
-
-2. **Advanced Time Stretching**: Using Librosa's high-quality time stretching algorithms, it preserves the natural duration of notes regardless of pitch, resulting in a more consistent instrument feel.
-
-3. **Intelligent Envelope Handling**: The tool applies gentle envelopes to ensure smooth attack and decay characteristics are maintained across all generated samples.
-
-4. **Automated Chord Generation**: Rather than manually constructing chords, Note Expander can automatically generate common chord types and inversions from your source samples.
-
-5. **FFT Size Optimization**: For very short samples, the tool automatically adjusts the FFT window size to prevent spectral artifacts that would otherwise occur during processing.
-
-While this approach sacrifices a small amount of audio fidelity compared to using recordings of every single note, it offers a pragmatic balance between quality and practicality. The technical choices made in the implementation—such as using spectral-based time stretching, adaptive FFT windows, and envelope preservation—ensure that the results remain musically useful even for critical applications.
-
 ## Features
 
 - **Intelligent Sample Generation**: Creates missing notes based on your existing samples.
@@ -196,44 +170,3 @@ When generating a full sample file, a single WAV file containing all notes in se
 
 - The quality of pitch-shifted samples decreases as they get further from the source sample.
 - Very extreme pitch shifts (e.g., shifting a C1 to a C8) may not sound natural.
-
-## Troubleshooting
-
-### "Directory not empty" Error During Cleanup
-
-If you encounter an error like this during the cleanup phase:
-
-```
-OSError: [Errno 66] Directory not empty: '/path/to/your/samples/exp_chords'
-```
-
-This can happen when the script tries to remove temporary directories but encounters locked files or permission issues. You can:
-
-1. **Keep artifacts**: Select the "Keep all generated files" option when running the script to skip cleanup entirely.
-
-2. **Manual cleanup**: The error doesn't affect the generated samples, so you can manually delete the `exp_chords` directory later.
-
-3. **Check permissions**: Ensure you have full read/write access to the directory and its contents.
-
-4. **Close other applications**: Make sure no other applications (DAWs, audio players, etc.) are accessing files in the directory.
-
-5. **Restart and try again**: Sometimes simply running the script again will succeed if the issue was temporary.
-
-### Unable to Detect Notes in Filenames
-
-If the script reports that it cannot detect notes in your sample filenames:
-
-1. **Check format**: Ensure filenames contain a note letter (A-G), followed by an optional sharp (#) or flat (b), and then an octave number (e.g., `Piano-C4.wav`, `Synth-Ab3.wav`).
-
-2. **Rename files**: You may need to rename your samples to follow the supported naming conventions.
-
-3. **Remove special characters**: Some special characters in filenames can interfere with note detection.
-
-### Other Issues
-
-For other problems:
-
-- Try processing a smaller set of samples to identify if specific files are causing issues
-- Check the terminal output for warning messages that might provide more information
-- Ensure your Python environment has all the required dependencies installed
-- Try running with the `-v` or `--verbose` flag for more detailed output
