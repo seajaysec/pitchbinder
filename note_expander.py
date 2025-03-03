@@ -384,51 +384,74 @@ def generate_chord(
         note_path = None
         if os.path.exists(os.path.join(target_dir, note_filename)):
             note_path = os.path.join(target_dir, note_filename)
+            print_info(f"  Found in target dir: {note_path}")
         elif os.path.exists(os.path.join(source_dir, note_filename)):
             note_path = os.path.join(source_dir, note_filename)
+            print_info(f"  Found in source dir: {note_path}")
         else:
             # If the exact note doesn't exist, find the closest available note
+            print_info(f"  Note not found directly, looking for closest sample")
             closest_sample = find_closest_sample(note, octave, all_samples)
             if closest_sample:
                 closest_note, closest_octave = parse_note_from_filename(closest_sample)
-
-                # Load the closest sample
-                audio, sr = librosa.load(
-                    os.path.join(source_dir, closest_sample), sr=None
+                print_info(
+                    f"  Using closest sample: {closest_sample} ({closest_note}{closest_octave})"
                 )
 
-                # Pitch shift to the target note
-                audio, sr = pitch_shift_sample(
-                    audio, sr, closest_note, closest_octave, note, octave
-                )
-
-                # Trim silence at the beginning to ensure all notes start together
-                # Ensure audio is a numpy array
-                if isinstance(audio, tuple):
-                    audio = audio[0]
-
-                # Convert to float64 for librosa.effects.trim
-                audio_float = (
-                    audio.astype(np.float64) if hasattr(audio, "astype") else audio
-                )
-                audio_trimmed, _ = librosa.effects.trim(
-                    audio_float, top_db=30, frame_length=512, hop_length=128
-                )
-
-                # Make sure we're working with a numpy array, not a tuple
-                if isinstance(audio_trimmed, tuple):
-                    audio = audio_trimmed[0]  # Extract the audio data from the tuple
+                # Check if the closest sample exists in target or source directory
+                closest_path = None
+                if os.path.exists(os.path.join(target_dir, closest_sample)):
+                    closest_path = os.path.join(target_dir, closest_sample)
+                    print_info(f"  Found closest sample in target dir: {closest_path}")
+                elif os.path.exists(os.path.join(source_dir, closest_sample)):
+                    closest_path = os.path.join(source_dir, closest_sample)
+                    print_info(f"  Found closest sample in source dir: {closest_path}")
                 else:
-                    audio = audio_trimmed
+                    print_warning(f"  Closest sample file not found: {closest_sample}")
+                    print_warning(
+                        f"  Checked: {os.path.join(target_dir, closest_sample)}"
+                    )
+                    print_warning(
+                        f"  Checked: {os.path.join(source_dir, closest_sample)}"
+                    )
+                    continue
 
-                note_audios.append(audio)
-                max_length = max(max_length, len(audio))
-                continue
-            else:
-                print(
-                    f"Warning: Could not find a suitable sample for {note}{octave} in chord"
-                )
-                continue
+                try:
+                    # Load the closest sample
+                    audio, sr = librosa.load(closest_path, sr=None)
+
+                    # Pitch shift to the target note
+                    audio, sr = pitch_shift_sample(
+                        audio, sr, closest_note, closest_octave, note, octave
+                    )
+
+                    # Trim silence at the beginning to ensure all notes start together
+                    # Ensure audio is a numpy array
+                    if isinstance(audio, tuple):
+                        audio = audio[0]
+
+                    # Convert to float64 for librosa.effects.trim
+                    audio_float = (
+                        audio.astype(np.float64) if hasattr(audio, "astype") else audio
+                    )
+                    audio_trimmed, _ = librosa.effects.trim(
+                        audio_float, top_db=30, frame_length=512, hop_length=128
+                    )
+
+                    # Make sure we're working with a numpy array, not a tuple
+                    if isinstance(audio_trimmed, tuple):
+                        audio = audio_trimmed[
+                            0
+                        ]  # Extract the audio data from the tuple
+                    else:
+                        audio = audio_trimmed
+
+                    note_audios.append(audio)
+                    max_length = max(max_length, len(audio))
+                    continue
+                except Exception as e:
+                    print(f"Warning: Could not load closest sample: {e}")
+                    continue
 
         # Load the audio for this note
         audio, _ = librosa.load(note_path, sr=sr)
