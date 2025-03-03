@@ -175,6 +175,32 @@ def pitch_shift_sample(
 def find_closest_sample(target_note, target_octave, existing_samples):
     """Find the closest existing sample to use as a source."""
     notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+    # Debug information
+    print_info(f"Finding closest sample for {target_note}{target_octave}")
+    print_info(f"Available samples: {len(existing_samples)}")
+
+    # First, check if we're looking for an extreme octave (very high or very low)
+    # If so, we'll limit our search to the available octaves
+    available_octaves = set()
+    for sample in existing_samples:
+        note, octave = parse_note_from_filename(sample)
+        if note and octave:
+            available_octaves.add(octave)
+
+    print_info(f"Available octaves: {sorted(available_octaves)}")
+
+    # If target octave is outside available range, adjust it to the closest available
+    if target_octave not in available_octaves and available_octaves:
+        original_octave = target_octave
+        if target_octave > max(available_octaves):
+            target_octave = max(available_octaves)
+        elif target_octave < min(available_octaves):
+            target_octave = min(available_octaves)
+        print_info(
+            f"Adjusted target octave from {original_octave} to {target_octave} (available range)"
+        )
+
     target_index = notes.index(target_note) + (target_octave * 12)
 
     closest_sample = None
@@ -189,6 +215,7 @@ def find_closest_sample(target_note, target_octave, existing_samples):
                 if note == target_note:
                     # Direct match
                     exact_match = sample
+                    print_info(f"Found exact match: {sample}")
                     break
 
             # Calculate semitone distance
@@ -198,9 +225,14 @@ def find_closest_sample(target_note, target_octave, existing_samples):
             if distance < min_distance:
                 min_distance = distance
                 closest_sample = sample
+                print_info(
+                    f"New closest sample: {sample} (distance: {distance} semitones)"
+                )
 
     # Return exact match if found, otherwise closest sample
-    return exact_match if exact_match else closest_sample
+    result = exact_match if exact_match else closest_sample
+    print_info(f"Selected sample: {result}")
+    return result
 
 
 # Update chord definitions to match Chords.csv format exactly
