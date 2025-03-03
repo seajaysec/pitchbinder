@@ -1545,7 +1545,10 @@ def generate_full_chord_samples(chord_dir, prefix):
 
             # Trim silence at the beginning and end
             audio_data = audio[0] if isinstance(audio, tuple) else audio
-            audio, _ = librosa.effects.trim(audio_data.astype(np.float64), top_db=30)
+            audio_float = (
+                audio.astype(np.float64) if hasattr(audio, "astype") else audio
+            )
+            audio, _ = librosa.effects.trim(audio_float, top_db=30)
 
             # Limit each sample to 3 seconds max
             max_length = min(len(audio), 3 * sr)
