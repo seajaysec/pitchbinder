@@ -909,10 +909,16 @@ def generate_chords(
                         if generate_inversions and inversions:
                             for inv_num, inv_semitones in inversions:
                                 try:
-                                    # Try to generate the inverted chord using the inverted semitones
+                                    # Compute the new root for the inversion based on the original semitones.
+                                    # The inversion index inv_num indicates which note becomes the new root.
+                                    new_root, new_octave = get_note_from_semitone(
+                                        note, octave, semitones[inv_num]
+                                    )
+
+                                    # Try to generate the inverted chord using the inverted semitones and new root
                                     inv_chord_audio, inv_sr = generate_chord(
-                                        note,
-                                        octave,
+                                        new_root,
+                                        new_octave,
                                         inv_semitones,
                                         all_samples,
                                         source_dir,
@@ -923,7 +929,7 @@ def generate_chords(
 
                                     if inv_chord_audio is not None:
                                         # Save the inverted chord with inversion number in filename
-                                        inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
+                                        inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{new_root}{new_octave}.wav"
                                         inv_chord_path = os.path.join(
                                             inversions_dir, inv_chord_filename
                                         )
@@ -939,16 +945,14 @@ def generate_chords(
                                         f"{WARNING}    Error generating inversion, using fallback method: {str(e)}{RESET}"
                                     )
 
-                                    # Save the inverted chord with inversion number in filename
+                                    # Save the inverted chord with inversion number in filename using the original chord audio as fallback
                                     inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
                                     inv_chord_path = os.path.join(
                                         inversions_dir, inv_chord_filename
                                     )
-
-                                    # Use the original chord audio as a fallback
                                     sf.write(inv_chord_path, chord_audio, sr)
                                     tqdm.write(
-                                        f"{SUCCESS}    Generated {inv_chord_filename} (fallback method){RESET}"
+                                        f"{SUCCESS}    Generated {inv_chord_filename} (fallback){RESET}"
                                     )
 
                     # Update the master progress bar
