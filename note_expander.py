@@ -1671,58 +1671,66 @@ def process_directory(
     generate_inversions=False,
 ):
     """Process a single directory to generate missing samples."""
-    print_header(f"Processing directory: {source_dir}")
+    # Acquire lock for consistent console output when running in parallel
+    with tqdm_lock:
+        print_header(f"Processing directory: {source_dir}")
 
-    # Get all WAV files in the source directory
-    existing_samples = get_all_wav_files(source_dir)
+        # Get all WAV files in the source directory
+        existing_samples = get_all_wav_files(source_dir)
 
-    if not existing_samples:
-        print_error(f"No WAV files found in the source directory: {source_dir}")
-        return
+        if not existing_samples:
+            print_error(f"No WAV files found in the source directory: {source_dir}")
+            return
 
-    # Check if files have detectable notes
-    valid_samples = []
-    for sample in existing_samples:
-        note, octave = parse_note_from_filename(sample)
-        if note and octave:
-            valid_samples.append(sample)
+        # Check if files have detectable notes
+        valid_samples = []
+        for sample in existing_samples:
+            note, octave = parse_note_from_filename(sample)
+            if note and octave:
+                valid_samples.append(sample)
 
-    if not valid_samples:
-        print_error(f"No samples with detectable notes found in: {source_dir}")
-        return
+        if not valid_samples:
+            print_error(f"No samples with detectable notes found in: {source_dir}")
+            return
 
-    if len(valid_samples) < len(existing_samples):
-        print_warning(
-            f"Warning: {len(existing_samples) - len(valid_samples)} samples have undetectable notes and will be ignored"
-        )
+        if len(valid_samples) < len(existing_samples):
+            print_warning(
+                f"Warning: {len(existing_samples) - len(valid_samples)} samples have undetectable notes and will be ignored"
+            )
 
-    # Auto-detect prefix if not provided
-    dir_prefix = prefix
-    if not dir_prefix:
-        # Use the prefix from the first valid sample
-        match = re.match(r"(.+)-[A-G]#?\d+\.wav", valid_samples[0])
-        if match:
-            dir_prefix = match.group(1)
-        else:
-            # Use the directory name as a fallback
-            dir_prefix = os.path.basename(source_dir)
-            if not dir_prefix:  # In case it's the root directory
-                dir_prefix = "Piano"
+        # Auto-detect prefix if not provided
+        dir_prefix = prefix
+        if not dir_prefix:
+            # Use the prefix from the first valid sample
+            match = re.match(r"(.+)-[A-G]#?\d+\.wav", valid_samples[0])
+            if match:
+                dir_prefix = match.group(1)
+            else:
+                # Use the directory name as a fallback
+                dir_prefix = os.path.basename(source_dir)
+                if not dir_prefix:  # In case it's the root directory
+                    dir_prefix = "Piano"
 
-    # Now that we've validated the samples, create the target directory
-    if not os.path.exists(target_dir):
-        os.makedirs(target_dir)
+        # Now that we've validated the samples, create the target directory
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir)
 
-    print_info(f"Using prefix: {dir_prefix}")
-    print_info(f"Found {len(valid_samples)} valid samples in {source_dir}")
-    print_info(f"Generated samples will be saved to {target_dir}")
+        print_info(f"Using prefix: {dir_prefix}")
+        print_info(f"Found {len(valid_samples)} valid samples in {source_dir}")
+        print_info(f"Generated samples will be saved to {target_dir}")
+
+    # Release lock during time-consuming operations for better parallelism
 
     # Generate missing samples
     all_samples = generate_missing_samples(
         dir_prefix, valid_samples, source_dir, target_dir, time_match
     )
 
-    print_success(f"\nGeneration complete. {len(all_samples)} total samples available.")
+    # Use lock for progress output
+    with tqdm_lock:
+        print_success(
+            f"\nGeneration complete for {source_dir}. {len(all_samples)} total samples available."
+        )
 
     # Generate chord samples if requested
     chord_dir = None
@@ -1746,7 +1754,7 @@ def process_directory(
             all_samples, dir_prefix, source_dir, target_dir
         )
 
-    # Play all notes if requested (excluding the full sample)
+    # Play all notes if requested (excluding the full sample) - only when not in parallel mode
     if play:
         # Filter out the full sample if it was generated
         samples_to_play = [s for s in all_samples if s != full_sample_filename]
@@ -1761,6 +1769,9 @@ def process_directory(
             full_sample_filename,
             full_chord_filenames,
         )
+
+    # Return success indicator
+    return True
 
 
 def generate_full_chord_samples(chord_dir, prefix):
