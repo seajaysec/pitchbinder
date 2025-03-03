@@ -6,6 +6,32 @@ A powerful tool for expanding a small set of piano samples into a complete 8-oct
 
 Note Expander takes a few piano samples with note information in their filenames and intelligently generates the missing notes across the full piano range (C1-B8). It uses high-quality pitch shifting and optional time stretching to create natural-sounding samples for all 88 piano keys.
 
+## Why Expand Notes
+
+Traditional audio tools and DAWs offer pitch-shifting capabilities, but they come with significant limitations when you're trying to create a complete instrument:
+
+- **Preserving Natural Duration**: Standard pitch-shifting typically speeds up samples when pitching higher and slows them down when pitching lower. This creates unnatural results when attempting to build an instrument across multiple octaves, as high notes become too short and low notes too long.
+
+- **Limited Range**: Many pitch-shifting algorithms struggle with extreme shifts (e.g., moving multiple octaves from the source). The audio quality deteriorates quickly, introducing artifacts and losing the original character of the instrument.
+
+- **Clunky Chord Creation**: Creating chords in a DAW often requires manually placing and tuning multiple samples. This process is time-consuming and difficult to adjust, especially when working with multiple chord types and inversions.
+
+- **Workflow Complexity**: Setting up a full instrument with proper velocity layers, round-robin samples, and chord variations can require hundreds of manual adjustments in traditional workflows.
+
+Note Expander addresses these issues by:
+
+1. **Smart Sample Selection**: For each generated note, it finds the closest source sample to minimize pitch-shifting artifacts.
+
+2. **Advanced Time Stretching**: Using Librosa's high-quality time stretching algorithms, it preserves the natural duration of notes regardless of pitch, resulting in a more consistent instrument feel.
+
+3. **Intelligent Envelope Handling**: The tool applies gentle envelopes to ensure smooth attack and decay characteristics are maintained across all generated samples.
+
+4. **Automated Chord Generation**: Rather than manually constructing chords, Note Expander can automatically generate common chord types and inversions from your source samples.
+
+5. **FFT Size Optimization**: For very short samples, the tool automatically adjusts the FFT window size to prevent spectral artifacts that would otherwise occur during processing.
+
+While this approach sacrifices a small amount of audio fidelity compared to using recordings of every single note, it offers a pragmatic balance between quality and practicality. The technical choices made in the implementation—such as using spectral-based time stretching, adaptive FFT windows, and envelope preservation—ensure that the results remain musically useful even for critical applications.
+
 ## Features
 
 - **Intelligent Sample Generation**: Creates missing notes based on your existing samples.
