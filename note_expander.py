@@ -1121,9 +1121,11 @@ def generate_chords(
                             )
                             chord_path = os.path.join(quality_dir, chord_filename)
                             sf.write(chord_path, new_audio, sr)
-                            tqdm.write(
-                                f"{SUCCESS}    Generated {chord_filename} (pitch-shifted){RESET}"
-                            )
+
+                            with tqdm_lock:
+                                tqdm.write(
+                                    f"{SUCCESS}    Generated {chord_filename} (pitch-shifted){RESET}"
+                                )
 
                             # Generate inversions for this chord if requested
                             if generate_inversions and inversions:
@@ -1138,9 +1140,11 @@ def generate_chords(
                                     # We already have the new_audio, so we'll use that
                                     # This avoids trying to access files that might not exist
                                     sf.write(inv_chord_path, new_audio, sr)
-                                    tqdm.write(
-                                        f"{SUCCESS}    Generated {inv_chord_filename} (pitch-shifted){RESET}"
-                                    )
+
+                                    with tqdm_lock:
+                                        tqdm.write(
+                                            f"{SUCCESS}    Generated {inv_chord_filename} (pitch-shifted){RESET}"
+                                        )
 
                     # Update the master progress bar
                     with tqdm_lock:
