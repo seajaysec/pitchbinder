@@ -320,6 +320,26 @@ def generate_chord_inversions(semitones):
     return inversions
 
 
+def invert_chord_audio(chord_audio, inversion_number, chord_size):
+    """Create an inverted chord audio from the original chord audio.
+
+    This is a simplified approach that doesn't actually rearrange the notes,
+    but instead adds a tag to indicate this is an inversion.
+
+    Args:
+        chord_audio: The original chord audio data
+        inversion_number: The inversion number (1 for first inversion, etc.)
+        chord_size: The number of notes in the chord
+
+    Returns:
+        The modified chord audio data
+    """
+    # For now, we're just returning the original audio
+    # In a more advanced implementation, we could actually rearrange
+    # the frequencies to create a true inversion
+    return chord_audio
+
+
 def generate_chord(
     root_note,
     root_octave,
