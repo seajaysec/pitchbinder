@@ -1143,9 +1143,16 @@ def generate_full_sample(all_samples, prefix, source_dir, target_dir):
 
             # Detect and trim silence at the beginning and end
             # This helps prevent clicks without altering the actual sound
-            audio_data = audio[0] if isinstance(audio, tuple) else audio
+            # Ensure audio is a numpy array
+            if isinstance(audio, tuple):
+                audio = audio[0]
+
+            # Convert to float64 for librosa.effects.trim
+            audio_float = (
+                audio.astype(np.float64) if hasattr(audio, "astype") else audio
+            )
             non_silent = librosa.effects.trim(
-                audio_data.astype(np.float64),
+                audio_float,
                 top_db=40,  # Higher value = more aggressive trimming
                 frame_length=512,
                 hop_length=128,
