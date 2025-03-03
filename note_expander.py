@@ -850,11 +850,11 @@ def generate_chords(
                                         inversions_dir, inv_chord_filename
                                     )
 
-                                    # We already have the chord audio, so we'll use that
+                                    # We already have the new_audio, so we'll use that
                                     # This avoids trying to access files that might not exist
-                                    sf.write(inv_chord_path, chord_audio, sr)
+                                    sf.write(inv_chord_path, new_audio, sr)
                                     tqdm.write(
-                                        f"{SUCCESS}    Generated {inv_chord_filename}{RESET}"
+                                        f"{SUCCESS}    Generated {inv_chord_filename} (pitch-shifted){RESET}"
                                     )
 
                     # Update the master progress bar
