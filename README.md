@@ -15,6 +15,7 @@ Note Expander takes a few piano samples with note information in their filenames
 - **Slice Marking**: Embeds full sample with markers for each note, compatible with Dirtywave M8 and more.
 - **Recursive Processing**: Process multiple directories at once.
 - **Playback**: Option to play all generated notes in sequence after processing.
+- **Interactive Interface**: User-friendly questionary-based interface for all options.
 
 ## How It Works
 
@@ -40,62 +41,33 @@ As long as the filename contains a note letter (A-G), optional sharp (#), and oc
 
 ## Usage
 
-Basic usage:
-```
-python note_expander.py [options] [source_directory]
-```
-
-If no source directory is specified, the current directory is used.
-
-### Command Line Options
-
-- `-r, --recurse`: Process all subdirectories recursively
-- `-p PREFIX, --prefix PREFIX`: Prefix for generated files (default: auto-detect)
-- `-P, --play`: Play all notes when done
-- `-f, --gen-full`: Generate a single WAV file with all notes in sequence
-- `-t, --time-match`: Match all generated samples to the average length of source samples
-- `-o, --overwrite`: Overwrite existing expansion directories and regenerate all samples
-
-### Examples
-
-Process the current directory:
-
+Simply run the script and follow the interactive prompts:
 ```
 python note_expander.py
 ```
 
-Process a specific directory with time matching:
-```
-python note_expander.py -t /path/to/samples
-```
-
-Generate a full sample file with all notes:
-```
-python note_expander.py -f /path/to/samples
-```
-
-Process all subdirectories recursively:
-```
-python note_expander.py -r /path/to/parent/directory
-```
-
-Full processing with all processing options:
-```
-python note_expander.py -fort /path/to/samples
-```
+The interactive interface will guide you through all available options:
+- Selecting source directory
+- Processing subdirectories recursively
+- Setting a custom prefix for generated files
+- Generating a full sample file with all notes
+- Time matching samples
+- Generating chord samples
+- Playing all notes when done
+- Overwriting existing expansion directories
 
 ## Output
 
 All generated samples are saved to an `expansion` subdirectory within each processed directory. This keeps your original samples untouched while organizing the new ones.
 
-When using the `-f` option, a single WAV file containing all notes in sequence is generated, along with a CUE file that marks the position of each note.
+When generating a full sample file, a single WAV file containing all notes in sequence is created, along with a CUE file that marks the position of each note.
 
 ## Tips for Best Results
 
 1. **Use High-Quality Source Samples**: The better your source samples, the better the generated ones will be.
 2. **Provide Samples Across the Range**: For best results, provide samples that span the range (e.g., one sample per octave).
 3. **Consistent Naming**: Make sure your sample filenames follow a consistent pattern with clear note information.
-4. **Time Matching**: Use the `-t` option if you want all samples to have the same duration.
+4. **Time Matching**: Use the time matching option if you want all samples to have the same duration.
 
 ## Limitations
 
