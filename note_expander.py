@@ -1552,7 +1552,11 @@ def generate_full_chord_samples(chord_dir, prefix):
             audio, _ = librosa.load(chord_file, sr=sr)
 
             # Trim silence at the beginning and end
-            audio_data = audio[0] if isinstance(audio, tuple) else audio
+            # Ensure audio is a numpy array
+            if isinstance(audio, tuple):
+                audio = audio[0]
+
+            # Convert to float64 for librosa.effects.trim
             audio_float = (
                 audio.astype(np.float64) if hasattr(audio, "astype") else audio
             )
