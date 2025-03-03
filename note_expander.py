@@ -2619,14 +2619,23 @@ def interactive_mode():
 
 def process_directory_wrapper(**kwargs):
     """Wrapper for process_directory to handle thread safety and exceptions."""
+    source_dir = kwargs.get("source_dir", "unknown")
     try:
-        # Acquire lock when printing with tqdm to avoid display issues
-        with tqdm_lock:
-            return process_directory(**kwargs)
+        # Log start of processing
+        update_status(source_dir, "Started processing", "info")
+
+        # Process the directory
+        result = process_directory(**kwargs)
+
+        # Log successful completion
+        update_status(source_dir, "Processing completed successfully", "success")
+        return result
     except Exception as e:
-        print_error(
-            f"Error processing directory {kwargs.get('source_dir', 'unknown')}: {str(e)}"
-        )
+        # Log error
+        error_message = f"Error processing directory: {str(e)}"
+        update_status(source_dir, error_message, "error")
+
+        # Still raise the exception for the executor to handle
         raise e
 
 
