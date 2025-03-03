@@ -800,95 +800,99 @@ def generate_chords(
     # Use the hardcoded chord definitions
     chord_defs = CHORD_DEFINITIONS
 
-    # Filter chord definitions by quality if specified
-    if chord_qualities:
-        chord_defs = [chord for chord in chord_defs if chord[1] in chord_qualities]
-        print_info(
-            f"Filtered to {len(chord_defs)} chord types in qualities: {', '.join(chord_qualities)}"
+    # Acquire lock for consistent console output
+    with tqdm_lock:
+        # Filter chord definitions by quality if specified
+        if chord_qualities:
+            chord_defs = [chord for chord in chord_defs if chord[1] in chord_qualities]
+            print_info(
+                f"Filtered to {len(chord_defs)} chord types in qualities: {', '.join(chord_qualities)}"
+            )
+
+        print_header(f"Generating {len(chord_defs)} chord types")
+        if generate_inversions:
+            print_info("Inversions will be generated for all applicable chords")
+
+        # Create the main chord directory if it doesn't exist
+        if not os.path.exists(chord_dir):
+            os.makedirs(chord_dir)
+
+        # Group chord definitions by quality
+        chord_by_quality = {}
+        for chord_name, quality, semitones, _ in chord_defs:
+            if quality not in chord_by_quality:
+                chord_by_quality[quality] = []
+            chord_by_quality[quality].append((chord_name, semitones))
+
+        # Count total chords to generate for progress tracking
+        total_chords = 0
+        for quality, chords in chord_by_quality.items():
+            for _, semitones in chords:
+                # Count chords for all octaves (1-8)
+                for octave in range(1, 9):
+                    for note in notes:
+                        # Skip if the highest note in the chord would be above B8
+                        highest_semitone = max(semitones)
+                        highest_note, highest_octave = get_note_from_semitone(
+                            note, octave, highest_semitone
+                        )
+                        if highest_octave <= 8:
+                            total_chords += 1
+
+                            # Add count for inversions if enabled
+                            if generate_inversions and len(semitones) >= 3:
+                                # Add inversions count (number of inversions = number of notes - 1)
+                                total_chords += len(semitones) - 1
+
+        # Set up progress bars with fixed positions but offset for thread safety
+        # Use higher positions to avoid conflicts with other functions' progress bars
+        base_position = 3  # Start at position 3 to avoid conflicts
+
+        # Create a master progress bar at the bottom position
+        master_pbar = tqdm(
+            total=total_chords,
+            desc=f"Overall chord progress for {os.path.basename(source_dir)}",
+            position=base_position + 2,  # Fixed position at the bottom
+            leave=True,
+            bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.GREEN, RESET),
         )
 
-    print_header(f"Generating {len(chord_defs)} chord types")
-    if generate_inversions:
-        print_info("Inversions will be generated for all applicable chords")
-
-    # Create the main chord directory if it doesn't exist
-    if not os.path.exists(chord_dir):
-        os.makedirs(chord_dir)
-
-    # Group chord definitions by quality
-    chord_by_quality = {}
-    for chord_name, quality, semitones, _ in chord_defs:
-        if quality not in chord_by_quality:
-            chord_by_quality[quality] = []
-        chord_by_quality[quality].append((chord_name, semitones))
-
-    # Count total chords to generate for progress tracking
-    total_chords = 0
-    for quality, chords in chord_by_quality.items():
-        for _, semitones in chords:
-            # Count chords for all octaves (1-8)
-            for octave in range(1, 9):
-                for note in notes:
-                    # Skip if the highest note in the chord would be above B8
-                    highest_semitone = max(semitones)
-                    highest_note, highest_octave = get_note_from_semitone(
-                        note, octave, highest_semitone
-                    )
-                    if highest_octave <= 8:
-                        total_chords += 1
-
-                        # Add count for inversions if enabled
-                        if generate_inversions and len(semitones) >= 3:
-                            # Add inversions count (number of inversions = number of notes - 1)
-                            total_chords += len(semitones) - 1
-
-    # Set up progress bars with fixed positions
-    # Position 0 is for current task messages
-    # Position 1 is for quality progress
-    # Position 2 is for overall progress (stays at the bottom)
-
-    # Create a master progress bar at the bottom position
-    master_pbar = tqdm(
-        total=total_chords,
-        desc="Overall progress",
-        position=2,  # Fixed position at the bottom
-        leave=True,
-        bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.GREEN, RESET),
-    )
-
-    # Create a quality progress bar above the master bar
-    quality_pbar = tqdm(
-        total=len(chord_by_quality),
-        desc="Chord progress",
-        position=1,  # Fixed position above master bar
-        leave=True,
-        bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.BLUE, RESET),
-    )
+        # Create a quality progress bar above the master bar
+        quality_pbar = tqdm(
+            total=len(chord_by_quality),
+            desc="Chord quality progress",
+            position=base_position + 1,  # Fixed position above master bar
+            leave=True,
+            bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.BLUE, RESET),
+        )
 
     # Generate chords for each quality
     for quality_idx, (quality, chords) in enumerate(chord_by_quality.items()):
-        # Create a directory for this chord quality
-        quality_dir = os.path.join(chord_dir, quality)
-        if not os.path.exists(quality_dir):
-            os.makedirs(quality_dir)
+        with tqdm_lock:
+            # Create a directory for this chord quality
+            quality_dir = os.path.join(chord_dir, quality)
+            if not os.path.exists(quality_dir):
+                os.makedirs(quality_dir)
 
-        # Create inversions directory if needed
-        if generate_inversions:
-            inversions_dir = os.path.join(quality_dir, "inversions")
-            if not os.path.exists(inversions_dir):
-                os.makedirs(inversions_dir)
+            # Create inversions directory if needed
+            if generate_inversions:
+                inversions_dir = os.path.join(quality_dir, "inversions")
+                if not os.path.exists(inversions_dir):
+                    os.makedirs(inversions_dir)
 
-        # Update the current task message (position 0)
-        tqdm.write(f"{INFO}Generating {len(chords)} {quality} chord types...{RESET}")
+            # Update the current task message
+            tqdm.write(
+                f"{INFO}Generating {len(chords)} {quality} chord types...{RESET}"
+            )
 
-        # Create a chord type progress bar
-        chord_pbar = tqdm(
-            total=len(chords),
-            desc=f"{quality} chords",
-            position=0,  # Top position for current task
-            leave=False,  # Don't leave this bar when done
-            bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.YELLOW, RESET),
-        )
+            # Create a chord type progress bar
+            chord_pbar = tqdm(
+                total=len(chords),
+                desc=f"{quality} chords",
+                position=base_position,  # Top position for current task
+                leave=False,  # Don't leave this bar when done
+                bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.YELLOW, RESET),
+            )
 
         # Generate each chord type with roots from C1 to B8
         for chord_idx, (chord_name, semitones) in enumerate(chords):
@@ -896,7 +900,8 @@ def generate_chords(
             safe_chord_name = re.sub(r"[^\w\-]", "_", chord_name)
 
             # Update chord progress
-            chord_pbar.set_description(f"Generating {chord_name}")
+            with tqdm_lock:
+                chord_pbar.set_description(f"Generating {chord_name}")
 
             # First generate the core chords (C2-B4) directly
             core_chords = {}
@@ -1003,13 +1008,6 @@ def generate_chords(
                                     tqdm.write(
                                         f"{SUCCESS}    Generated {inv_chord_filename} (fallback){RESET}"
                                     )
-
-                    # Update the master progress bar
-                    master_pbar.update(1)
-
-                    # Update for inversions if generated
-                    if generate_inversions and inversions and chord_audio is not None:
-                        master_pbar.update(len(inversions))
 
             # Now generate the extended range (C1-B1 and C5-B8) by pitch shifting
             # First, find the closest core chord for each target chord
@@ -1141,13 +1139,6 @@ def generate_chords(
                                     tqdm.write(
                                         f"{SUCCESS}    Generated {inv_chord_filename} (pitch-shifted){RESET}"
                                     )
-
-                    # Update the master progress bar
-                    master_pbar.update(1)
-
-                    # Update for inversions if applicable
-                    if generate_inversions and inversions and closest_core:
-                        master_pbar.update(len(inversions))
 
             # Update chord progress bar
             chord_pbar.update(1)
