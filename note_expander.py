@@ -932,22 +932,26 @@ def generate_chords(
                                         chord_duration_factor=4.0,
                                     )
 
-                                    if inv_chord_audio is not None:
-                                        # Save the inverted chord with inversion number in filename
-                                        inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{new_root}{new_octave}.wav"
-                                        inv_chord_path = os.path.join(
-                                            inversions_dir, inv_chord_filename
-                                        )
-                                        sf.write(
-                                            inv_chord_path, inv_chord_audio, inv_sr
-                                        )
+                                    # Check if inversion generation returned None
+                                    if inv_chord_audio is None:
                                         tqdm.write(
-                                            f"{SUCCESS}    Generated {inv_chord_filename}{RESET}"
+                                            f"{WARNING}    Inversion generation returned None for inversion {inv_num} of {chord_name} at {new_root}{new_octave}{RESET}"
                                         )
+                                        raise ValueError("Inversion generation failed")
+
+                                    # Save the inverted chord with inversion number in filename
+                                    inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{new_root}{new_octave}.wav"
+                                    inv_chord_path = os.path.join(
+                                        inversions_dir, inv_chord_filename
+                                    )
+                                    sf.write(inv_chord_path, inv_chord_audio, inv_sr)
+                                    tqdm.write(
+                                        f"{SUCCESS}    Generated {inv_chord_filename}{RESET}"
+                                    )
                                 except Exception as e:
                                     # If there's an error, fall back to using the original chord audio
                                     tqdm.write(
-                                        f"{WARNING}    Error generating inversion, using fallback method: {str(e)}{RESET}"
+                                        f"{WARNING}    Error generating inversion {inv_num} for {chord_name}: {str(e)}{RESET}"
                                     )
 
                                     # Save the inverted chord with inversion number in filename using the original chord audio as fallback
