@@ -1735,8 +1735,10 @@ def process_directory(
         existing_samples = get_all_wav_files(source_dir)
 
         if not existing_samples:
-            print_error(f"No WAV files found in the source directory: {source_dir}")
-            return
+            update_status(
+                source_dir, "No WAV files found in the source directory", "warning"
+            )
+            return False
 
         # Check if files have detectable notes
         valid_samples = []
@@ -1746,12 +1748,16 @@ def process_directory(
                 valid_samples.append(sample)
 
         if not valid_samples:
-            print_error(f"No samples with detectable notes found in: {source_dir}")
-            return
+            update_status(
+                source_dir, "No samples with detectable notes found", "warning"
+            )
+            return False
 
         if len(valid_samples) < len(existing_samples):
-            print_warning(
-                f"Warning: {len(existing_samples) - len(valid_samples)} samples have undetectable notes and will be ignored"
+            update_status(
+                source_dir,
+                f"{len(existing_samples) - len(valid_samples)} samples have undetectable notes and will be ignored",
+                "warning",
             )
 
         # Auto-detect prefix if not provided
@@ -1771,27 +1777,28 @@ def process_directory(
         if not os.path.exists(target_dir):
             os.makedirs(target_dir)
 
-        print_info(f"Using prefix: {dir_prefix}")
-        print_info(f"Found {len(valid_samples)} valid samples in {source_dir}")
-        print_info(f"Generated samples will be saved to {target_dir}")
+        update_status(source_dir, f"Using prefix: {dir_prefix}", "info")
+        update_status(source_dir, f"Found {len(valid_samples)} valid samples", "info")
+        update_status(
+            source_dir, f"Generated samples will be saved to {target_dir}", "info"
+        )
 
     # Release lock during time-consuming operations for better parallelism
 
     # Generate missing samples
+    update_status(source_dir, "Generating missing samples...", "info")
     all_samples = generate_missing_samples(
         dir_prefix, valid_samples, source_dir, target_dir, time_match
     )
 
     # Use lock for progress output
-    with tqdm_lock:
-        print_success(
-            f"\nGeneration complete for {source_dir}. {len(all_samples)} total samples available."
-        )
+    update_status(source_dir, f"Generated {len(all_samples)} total samples", "success")
 
     # Generate chord samples if requested
     chord_dir = None
     full_chord_filenames = []
     if chords:
+        update_status(source_dir, "Starting chord generation...", "info")
         chord_dir = os.path.join(source_dir, "exp_chords")
         chord_dir, full_chord_filenames = generate_chords(
             dir_prefix,
@@ -1802,22 +1809,31 @@ def process_directory(
             chord_qualities=chord_qualities,
             generate_inversions=generate_inversions,
         )
+        update_status(
+            source_dir,
+            f"Chord generation complete: {len(full_chord_filenames)} chord types created",
+            "success",
+        )
 
     # Generate full sample file if requested
     full_sample_filename = None
     if gen_full:
+        update_status(source_dir, "Generating full sample file...", "info")
         full_sample_filename = generate_full_sample(
             all_samples, dir_prefix, source_dir, target_dir
         )
+        update_status(source_dir, "Full sample file generated", "success")
 
     # Play all notes if requested (excluding the full sample) - only when not in parallel mode
     if play:
+        update_status(source_dir, "Playing all generated samples...", "info")
         # Filter out the full sample if it was generated
         samples_to_play = [s for s in all_samples if s != full_sample_filename]
         play_all_notes(samples_to_play, source_dir, target_dir)
 
     # Clean up artifacts if requested
     if not keep_artifacts:
+        update_status(source_dir, "Cleaning up temporary files...", "info")
         cleanup_artifacts(
             source_dir,
             target_dir,
@@ -1825,6 +1841,7 @@ def process_directory(
             full_sample_filename,
             full_chord_filenames,
         )
+        update_status(source_dir, "Cleanup complete", "info")
 
     # Return success indicator
     return True
