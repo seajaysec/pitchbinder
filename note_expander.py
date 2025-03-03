@@ -369,9 +369,100 @@ def generate_chord(
     print_info(
         f"Generating chord with root {root_note}{root_octave} and semitones {semitones}"
     )
-    print_info(f"Source directory: {source_dir}")
-    print_info(f"Target directory: {target_dir}")
 
+    # Check if we're dealing with extreme octaves (1, 5-8)
+    is_extreme_octave = root_octave == 1 or root_octave >= 5
+
+    # For extreme octaves, we'll use a more reliable approach
+    # We'll generate the chord in a middle octave (3) and then pitch shift it
+    if is_extreme_octave:
+        print_info(f"Using reliable approach for extreme octave {root_octave}")
+
+        # Generate the chord in octave 3
+        middle_octave = 3
+        middle_chord_audio, middle_sr = generate_chord(
+            root_note,
+            middle_octave,
+            semitones,
+            all_samples,
+            source_dir,
+            target_dir,
+            prefix,
+            chord_duration_factor,
+        )
+
+        if middle_chord_audio is None:
+            print_error(f"Failed to generate middle octave chord as a base")
+            return None, None
+
+        # Calculate the pitch shift factor
+        source_freq = get_note_frequency(root_note, middle_octave)
+        target_freq = get_note_frequency(root_note, root_octave)
+        shift_factor = target_freq / source_freq
+
+        print_info(
+            f"Pitch shifting from {root_note}{middle_octave} to {root_note}{root_octave} (factor: {shift_factor:.2f})"
+        )
+
+        # Resample the audio
+        if shift_factor != 1.0:
+            # For higher notes, we need to shorten the sample (speed up)
+            # For lower notes, we need to lengthen the sample (slow down)
+            new_length = int(len(middle_chord_audio) / shift_factor)
+            new_audio = signal.resample(middle_chord_audio, new_length)
+
+            # Time stretching to maintain consistent duration
+            current_duration = len(new_audio) / middle_sr
+            source_duration = len(middle_chord_audio) / middle_sr
+            stretch_factor = source_duration / current_duration
+
+            # Only apply time stretching if the difference is significant
+            if abs(stretch_factor - 1.0) > 0.01:
+                print_info(
+                    f"Time stretching to match duration (factor: {stretch_factor:.2f})"
+                )
+
+                # For librosa's time_stretch, rate < 1 makes it longer
+                rate = 1.0 / stretch_factor
+
+                # For very short samples, use a smaller n_fft value
+                n_fft = 2048  # Default value
+                if len(new_audio) < n_fft:
+                    n_fft = 2 ** int(np.log2(len(new_audio) - 1))
+                    n_fft = max(32, n_fft)  # Ensure it's not too small
+
+                # Convert to float64 to ensure it's the right type for time_stretch
+                if isinstance(new_audio, tuple):
+                    new_audio_float = new_audio[0].astype(np.float64)
+                else:
+                    new_audio_float = new_audio.astype(np.float64)
+
+                # Apply time stretching
+                new_audio = librosa.effects.time_stretch(
+                    new_audio_float, rate=float(rate), n_fft=n_fft
+                )
+
+                # Apply a gentle envelope to ensure smooth decay
+                envelope = np.ones(len(new_audio))
+                fade_len = min(
+                    int(middle_sr * 0.1), len(new_audio) // 10
+                )  # 100ms fade or 1/10 of length
+
+                # Only apply fade out (keep the attack intact)
+                if fade_len > 0:
+                    envelope[-fade_len:] = np.linspace(1, 0, fade_len)
+
+                new_audio = new_audio * envelope
+
+            # Normalize the final output to prevent clipping
+            if np.max(np.abs(new_audio)) > 0:
+                new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
+
+            return new_audio, middle_sr
+
+        return middle_chord_audio, middle_sr
+
+    # For normal octaves, continue with the original approach
     # Get the sample rate from the first available sample
     first_sample = all_samples[0]
 
