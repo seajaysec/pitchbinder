@@ -56,6 +56,104 @@ The interactive interface will guide you through all available options:
 - Playing all notes when done
 - Overwriting existing expansion directories
 
+## Interactive Interface Guide
+
+The note-expander uses a questionary-based interactive interface that guides you through the process. Here's a step-by-step walkthrough:
+
+1. **Source Directory Selection**
+   ```
+   Enter the source directory containing WAV samples: /path/to/your/samples/
+   ```
+   - Type the path to your sample directory
+   - You can use tab-completion to navigate directories
+   - The tool will scan and report how many WAV files it found
+
+2. **Recursive Processing**
+   ```
+   Process all subdirectories recursively? (y/n)
+   ```
+   - Choose 'y' to process all subdirectories containing samples
+   - Choose 'n' to only process the main directory
+
+3. **Custom Prefix**
+   ```
+   Use a custom prefix for generated files? (Otherwise auto-detect) (y/n)
+   ```
+   - If you select 'y', you'll be prompted to enter a custom prefix
+   - If you select 'n', the prefix will be automatically detected from your existing samples
+
+4. **Additional Options**
+   ```
+   Select additional options:
+   > [ ] Generate a single WAV file with all notes in sequence
+     [ ] Match all generated samples to the average length of source samples
+     [ ] Generate chord samples
+     [ ] Play all notes when done
+     [ ] Overwrite existing expansion directories
+     [ ] Keep all generated files (don't clean up artifacts)
+   ```
+   - Use arrow keys to navigate
+   - Press Space to select/deselect options
+   - Press Enter when done
+   
+5. **Chord Generation (if selected)**
+   
+   If you selected "Generate chord samples", you'll see additional prompts:
+   
+   a. **Chord Generation Mode**
+   ```
+   How would you like to generate chords?
+   > Generate all chord types
+     Select specific chord qualities
+   ```
+   
+   b. **Chord Qualities (if "Select specific chord qualities" is chosen)**
+   ```
+   Select chord qualities to generate:
+   > [ ] Major
+     [ ] Minor
+     [ ] Diminished
+     [ ] Augmented
+     [ ] Suspended
+     ...
+   ```
+   
+   c. **Inversions**
+   ```
+   Generate chord inversions? (This will create all possible inversions for each chord) (y/n)
+   ```
+
+6. **Review and Confirm Settings**
+
+   The tool will display a summary of your selected settings:
+   ```
+   Your selected settings:
+   Source directory: /path/to/your/samples/
+   Recursive mode: False
+   Custom prefix: Auto-detect
+   Generate full sample: True
+   Time match: True
+   Generate chords: True
+   Chord qualities: Major, Minor
+   Generate inversions: True
+   Play notes: False
+   Overwrite existing: False
+   Keep artifacts: False
+   
+   Proceed with these settings? (y/n)
+   ```
+   
+   - Review the settings and confirm to proceed
+   - If you select 'n', the process will be canceled
+
+7. **Processing**
+
+   Once confirmed, the tool will begin processing your samples:
+   - It will create an "expansion" directory within your source directory
+   - All generated files will be placed there, organized by type
+   - Progress bars will show the status of each step
+   - When completed, you'll see a success message
+
 ## Output
 
 All generated samples are saved to an `expansion` subdirectory within each processed directory. This keeps your original samples untouched while organizing the new ones.
