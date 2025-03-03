@@ -1140,20 +1140,32 @@ def generate_chords(
                                         f"{SUCCESS}    Generated {inv_chord_filename} (pitch-shifted){RESET}"
                                     )
 
+                    # Update the master progress bar
+                    with tqdm_lock:
+                        master_pbar.update(1)
+
+                        # Update for inversions if applicable
+                        if generate_inversions and inversions and closest_core:
+                            master_pbar.update(len(inversions))
+
             # Update chord progress bar
-            chord_pbar.update(1)
+            with tqdm_lock:
+                chord_pbar.update(1)
 
         # Close the chord progress bar
-        chord_pbar.close()
+        with tqdm_lock:
+            chord_pbar.close()
 
         # Update quality progress bar
-        quality_pbar.update(1)
+        with tqdm_lock:
+            quality_pbar.update(1)
 
     # Close progress bars
-    quality_pbar.close()
-    master_pbar.close()
+    with tqdm_lock:
+        quality_pbar.close()
+        master_pbar.close()
 
-    tqdm.write(f"{SUCCESS}\nChord generation complete!{RESET}")
+        tqdm.write(f"{SUCCESS}\nChord generation complete!{RESET}")
 
     # Generate full chord sample files by type
     full_chord_filenames = generate_full_chord_samples(chord_dir, prefix)
