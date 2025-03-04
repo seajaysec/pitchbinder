@@ -1754,11 +1754,23 @@ def process_directory(
     keep_artifacts=False,
     chord_qualities=None,
     generate_inversions=False,
+    overwrite=False,  # added parameter
 ):
     """Process a single directory to generate missing samples."""
     # Acquire lock for consistent console output when running in parallel
     with tqdm_lock:
         print_header(f"Processing directory: {source_dir}")
+
+        # If the directory contains a subdirectory named 'exp' and overwrite is not enabled, skip processing.
+        exp_dir = os.path.join(source_dir, "exp")
+        if not overwrite and os.path.isdir(exp_dir):
+            print_info(
+                f"Skipping directory: {source_dir} because it contains an 'exp' subdirectory"
+            )
+            update_status(
+                source_dir, "Directory skipped due to 'exp' subdirectory", "warning"
+            )
+            return False
 
         # Get all WAV files in the source directory
         existing_samples = get_all_wav_files(source_dir)
@@ -2580,6 +2592,9 @@ def interactive_mode():
                         "keep_artifacts": options_dict["keep_artifacts"],
                         "chord_qualities": chord_qualities,
                         "generate_inversions": generate_inversions,
+                        "overwrite": options_dict[
+                            "overwrite"
+                        ],  # Add overwrite parameter
                     }
                 )
 
@@ -2682,6 +2697,7 @@ def interactive_mode():
                     keep_artifacts=options_dict["keep_artifacts"],
                     chord_qualities=chord_qualities,
                     generate_inversions=generate_inversions,
+                    overwrite=options_dict["overwrite"],  # Add overwrite parameter
                 )
     else:
         # Process just the single directory (no parallelization needed)
@@ -2706,6 +2722,7 @@ def interactive_mode():
             keep_artifacts=options_dict["keep_artifacts"],
             chord_qualities=chord_qualities,
             generate_inversions=generate_inversions,
+            overwrite=options_dict["overwrite"],  # Add overwrite parameter
         )
 
     print_success("Processing complete!")
