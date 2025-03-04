@@ -2526,7 +2526,7 @@ def interactive_mode():
 
         # Walk through directories but skip "expansion", "exp_chords", and "exp" directories
         for root, dirs, files in os.walk(source_dir):
-            # Remove directories to prevent os.walk from traversing into them
+            # Skip traversing into output directories
             if "expansion" in dirs:
                 dirs.remove("expansion")
             if "exp_chords" in dirs:
@@ -2534,8 +2534,17 @@ def interactive_mode():
             if "exp" in dirs:
                 dirs.remove("exp")
 
+            # Add only directories that don't have an "exp" subdirectory (unless overwrite is enabled)
             for dir_name in dirs:
-                directories.append(os.path.join(root, dir_name))
+                dir_path = os.path.join(root, dir_name)
+                exp_path = os.path.join(dir_path, "exp")
+
+                # Skip directories that have already been processed (have an exp dir)
+                # unless overwrite is enabled
+                if os.path.exists(exp_path) and not options_dict["overwrite"]:
+                    continue  # Skip this directory
+
+                directories.append(dir_path)
 
         print(
             f"Found {len(directories)} directories to process (excluding expansion and output directories)"
