@@ -2703,13 +2703,24 @@ def interactive_mode():
         print(f"Generate inversions: {generate_inversions}")
         if generate_inversions and selected_inversions is not None:
             if selected_inversions:
-                print(
-                    f"Selected inversions: {', '.join(str(i) for i in selected_inversions)}"
-                )
+                print("Selected inversions:")
+                # Group chords by their selected inversions for cleaner display
+                inv_to_chords = {}
+                for (quality, chord_type), inv_list in selected_inversions.items():
+                    inv_key = tuple(sorted(inv_list))  # Make the list hashable
+                    if inv_key not in inv_to_chords:
+                        inv_to_chords[inv_key] = []
+                    inv_to_chords[inv_key].append(f"{chord_type} ({quality})")
+
+                # Display grouped inversions
+                for inv_list, chords in inv_to_chords.items():
+                    inv_str = ", ".join(get_ordinal_suffix(i) for i in inv_list)
+                    chord_str = ", ".join(chords)
+                    print(f"  {inv_str} for: {chord_str}")
             else:
-                print("No inversions selected")
+                print("  No inversions selected")
         elif generate_inversions:
-            print("Generating all possible inversions")
+            print("  Generating all possible inversions")
     print(f"Play notes: {options_dict['play']}")
     print(f"Overwrite existing: {options_dict['overwrite']}")
     print(f"Keep artifacts: {options_dict['keep_artifacts']}")
