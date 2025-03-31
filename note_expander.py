@@ -1986,14 +1986,16 @@ def process_directory(
         update_status(source_dir, "Starting chord generation...", "info")
         chord_dir = os.path.join(source_dir, "exp_chords")
 
-        # If inversion_settings is provided and not empty, ensure generate_inversions is True
-        # This ensures the inversions directory is created and inversions are processed
+        # If inversion_settings is provided and not empty, ensure we handle inversions properly
         if inversion_settings and any(inversion_settings.values()):
-            generate_inversions = True
+            # We have specific inversion settings
             update_status(
                 source_dir,
-                f"Will generate specific inversions for selected chord types: {inversion_settings}",
+                f"Will generate specific inversions according to user selection",
                 "info",
+            )
+            update_status(
+                source_dir, f"Selected chord types: {selected_chord_types}", "info"
             )
 
         chord_dir, full_chord_filenames = generate_chords(
@@ -2007,9 +2009,10 @@ def process_directory(
             selected_chord_types=selected_chord_types,
             inversion_settings=inversion_settings,
         )
+
         update_status(
             source_dir,
-            f"Chord generation complete: {len(full_chord_filenames)} chord types created",
+            f"Chord generation complete: {len(full_chord_filenames)} chord files created",
             "success",
         )
 
