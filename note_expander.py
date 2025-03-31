@@ -2506,40 +2506,35 @@ def interactive_mode():
     use_parallel = False
     max_workers = 1
     if recurse:
-        use_parallel = questionary.confirm(
-            "Process directories in parallel? (Faster but uses more system resources)",
-            default=True,
+        use_parallel = True  # Automatically assume parallel processing
+
+        # Calculate optimal number of workers based on system resources
+        optimal_workers = get_optimal_workers()
+
+        # Let user adjust the number of workers or use the suggested value
+        max_workers_options = [
+            f"Automatic ({optimal_workers} worker{'s' if optimal_workers > 1 else ''})",
+            "Custom number...",
+        ]
+
+        worker_choice = questionary.select(
+            "How many parallel workers to use?",
+            choices=max_workers_options,
             style=custom_style,
         ).ask()
 
-        if use_parallel:
-            # Calculate optimal number of workers based on system resources
-            optimal_workers = get_optimal_workers()
-
-            # Let user adjust the number of workers or use the suggested value
-            max_workers_options = [
-                f"Automatic ({optimal_workers} worker{'s' if optimal_workers > 1 else ''})",
-                "Custom number...",
-            ]
-
-            worker_choice = questionary.select(
-                "How many parallel workers to use?",
-                choices=max_workers_options,
+        if worker_choice.startswith("Automatic"):
+            max_workers = optimal_workers
+        else:
+            # Get custom number from user
+            max_workers = questionary.text(
+                f"Enter number of workers (1-{multiprocessing.cpu_count()}):",
+                default=str(optimal_workers),
+                validate=lambda text: text.isdigit()
+                and 1 <= int(text) <= multiprocessing.cpu_count(),
                 style=custom_style,
             ).ask()
-
-            if worker_choice.startswith("Automatic"):
-                max_workers = optimal_workers
-            else:
-                # Get custom number from user
-                max_workers = questionary.text(
-                    f"Enter number of workers (1-{multiprocessing.cpu_count()}):",
-                    default=str(optimal_workers),
-                    validate=lambda text: text.isdigit()
-                    and 1 <= int(text) <= multiprocessing.cpu_count(),
-                    style=custom_style,
-                ).ask()
-                max_workers = int(max_workers)
+            max_workers = int(max_workers)
 
     # Ask about prefix
     use_custom_prefix = questionary.confirm(
