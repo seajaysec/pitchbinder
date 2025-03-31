@@ -1,6 +1,7 @@
 import argparse
 import concurrent.futures
 import csv
+import datetime
 import multiprocessing
 import os
 import re
@@ -60,33 +61,41 @@ processing_status = {}
 status_lock = threading.Lock()
 
 
-def update_status(directory, message, status_type="info"):
-    """Update the status of a directory processing task."""
-    with status_lock:
-        timestamp = time.strftime("%H:%M:%S", time.localtime())
-        processing_status[directory] = {
-            "message": message,
-            "timestamp": timestamp,
-            "type": status_type,
-        }
+def update_status(source_dir, message, status_type="info", overwrite=False):
+    """Update the status display in the console with detailed information.
 
-        # Print the update with appropriate color
-        if status_type == "info":
-            print(
-                f"{INFO}[{timestamp}] {os.path.basename(directory)}: {message}{RESET}"
-            )
-        elif status_type == "success":
-            print(
-                f"{SUCCESS}[{timestamp}] {os.path.basename(directory)}: {message}{RESET}"
-            )
-        elif status_type == "warning":
-            print(
-                f"{WARNING}[{timestamp}] {os.path.basename(directory)}: {message}{RESET}"
-            )
-        elif status_type == "error":
-            print(
-                f"{ERROR}[{timestamp}] {os.path.basename(directory)}: {message}{RESET}"
-            )
+    Args:
+        source_dir: Source directory being processed
+        message: Status message to display
+        status_type: Type of status ('info', 'warning', 'error', 'success')
+        overwrite: Whether to overwrite the previous status message
+    """
+    # Get base directory name for cleaner display
+    base_dir = os.path.basename(source_dir) if source_dir else "Unknown"
+
+    # Choose color based on status type
+    color = INFO
+    if status_type == "warning":
+        color = WARNING
+    elif status_type == "error":
+        color = ERROR
+    elif status_type == "success":
+        color = SUCCESS
+
+    # Format the message
+    formatted_message = f"{color}[{base_dir}] {message}{RESET}"
+
+    # Print directly to console with timestamp
+    timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+
+    # Use tqdm.write to avoid conflicts with progress bars
+    with tqdm_lock:
+        tqdm.write(f"[{timestamp}] {formatted_message}")
+
+    # Write message to log file if log_file is defined
+    if "log_file" in globals() and log_file:
+        with open(log_file, "a") as f:
+            f.write(f"[{timestamp}] [{base_dir}] {message}\n")
 
 
 def get_optimal_workers():
