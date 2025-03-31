@@ -1349,6 +1349,13 @@ def generate_chords(
                     if task["generate_inversions"] and task["inversions"]:
                         pbar.update(len(task["inversions"]))
 
+        # Update status before starting pitch-shifted chord generation
+        update_status(
+            source_dir,
+            f"Processed core octave chords - Generated {chord_count} chords and {inversion_count} inversions. Starting pitch-shifted chords...",
+            "info",
+        )
+
         # Now create tasks for extended octave chords (C1-B1 and C5-B8)
         pitch_shift_tasks = []
 
