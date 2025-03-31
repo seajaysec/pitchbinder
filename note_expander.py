@@ -391,71 +391,6 @@ CHORD_DEFINITIONS = [
     ("Northern lights", "Atonal", [1, 2, 8, 12, 15, 18, 19, 22, 23, 28, 31], 11),
 ]
 
-# Mapping of original chord names to filename-safe shorthand
-CHORD_SHORTHAND = {
-    "Major fifth": "Major5",
-    "Dominant seventh": "Dom7",
-    "Major seventh": "Maj7",
-    "Major sixth": "Maj6",
-    "Dominant Minor ninth": "Dom7b9",
-    "Dominant ninth": "Dom9",
-    "Dominant seventh sharp ninth": "Dom7sharp9",
-    "Lydian": "Lydian",
-    "Major sixth ninth": "Maj6_9",
-    "Major ninth": "Maj9",
-    "Seven six": "Seven6",
-    "Augmented eleventh": "Aug11",
-    "Dominant eleventh": "Dom11",
-    "Major eleventh": "Maj11",
-    "Thirteenth flat ninth": "Dom13b9",
-    "Dominant thirteenth": "Dom13",
-    "Major thirteenth": "Maj13",
-    "Minor fifth": "Minor5",
-    "Minor Major seventh": "MinMaj7",
-    "Minor seventh": "Min7",
-    "Minor sixth": "Min6",
-    "Minor ninth": "Min9",
-    "Minor sixth ninth": "Min6_9",
-    "Minor eleventh": "Min11",
-    "Minor thirteenth": "Min13",
-    "Augmented": "Aug",
-    "Augmented Major seventh": "AugMaj7",
-    "Augmented seventh": "Aug7",
-    "Major seventh sharp eleventh": "Maj7sharp11",
-    "Ninth Augmented fifth": "Dom9Aug5",
-    "Diminished": "Dim",
-    "Diminished Major seventh": "DimMaj7",
-    "Diminished seventh": "Dim7",
-    "Half-Diminished seventh": "HalfDim7",
-    "Power chord": "PowerChord",
-    "Augmented sixth Italian": "Italian6",
-    "Augmented sixth French": "French6",
-    "Augmented sixth German": "German6",
-    "Tristan chord": "Tristan",
-    "Suspended": "Sus4",
-    "Seventh suspension four": "7Sus4",
-    "Ninth flat fifth": "Dom9b5",
-    "Thirteenth flat ninth flat fifth": "Dom13b9b5",
-    "Dream chord": "Dream",
-    "Magic chord": "Magic",
-    "Elektra": "Elektra",
-    "So What": "SoWhat",
-    "Petrushka": "Petrushka",
-    "Farben chord": "Farben",
-    "Viennese trichord two forms": "VienneseTri",
-    "Mystic chord": "Mystic",
-    "Ode-to-Napoleon hexachord": "OdeNapoleon",
-    "Northern lights": "NorthernLights",
-}
-
-
-def chord_to_filename(chord_name, inversion=None):
-    """Convert a chord name to a short filename, optionally with inversion number."""
-    shorthand = CHORD_SHORTHAND.get(chord_name, chord_name.replace(" ", ""))
-    if inversion is not None:
-        shorthand += f"_inv{inversion}"
-    return shorthand
-
 
 def get_note_from_semitone(root_note, root_octave, semitone_offset):
     """Get the note and octave given a root note and semitone offset."""
@@ -1059,7 +994,7 @@ def generate_chords(
 
                     if chord_audio is not None:
                         # Save the chord
-                        chord_filename = f"{prefix}-{chord_to_filename(chord_name)}.wav"
+                        chord_filename = f"{prefix}-{safe_chord_name}.wav"
                         chord_path = os.path.join(quality_dir, chord_filename)
                         sf.write(chord_path, chord_audio, sr)
                         tqdm.write(f"{SUCCESS}    Generated {chord_filename}{RESET}")
@@ -1112,7 +1047,9 @@ def generate_chords(
                                         raise ValueError("Inversion generation failed")
 
                                     # Save the inverted chord with inversion number in filename
-                                    inv_chord_filename = f"{prefix}-{chord_to_filename(chord_name, inv_num)}.wav"
+                                    inv_chord_filename = (
+                                        f"{prefix}-{safe_chord_name}-{inv_num}stInv.wav"
+                                    )
                                     inv_chord_path = os.path.join(
                                         inversions_dir, inv_chord_filename
                                     )
@@ -1127,7 +1064,9 @@ def generate_chords(
                                     )
 
                                     # Save the inverted chord with inversion number in filename using the original chord audio as fallback
-                                    inv_chord_filename = f"{prefix}-{chord_to_filename(chord_name, inv_num)}.wav"
+                                    inv_chord_filename = (
+                                        f"{prefix}-{safe_chord_name}-{inv_num}stInv.wav"
+                                    )
                                     inv_chord_path = os.path.join(
                                         inversions_dir, inv_chord_filename
                                     )
@@ -1243,9 +1182,7 @@ def generate_chords(
                                 new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
 
                             # Save the pitch-shifted chord
-                            chord_filename = (
-                                f"{prefix}-{chord_to_filename(chord_name)}.wav"
-                            )
+                            chord_filename = f"{prefix}-{safe_chord_name}.wav"
                             chord_path = os.path.join(quality_dir, chord_filename)
                             sf.write(chord_path, new_audio, sr)
 
@@ -1259,7 +1196,9 @@ def generate_chords(
                                 for inv_num, inv_semitones in inversions:
                                     # For pitch-shifted chords, we need to use the same approach
                                     # Instead of generating from scratch, pitch-shift the chord we just created
-                                    inv_chord_filename = f"{prefix}-{chord_to_filename(chord_name, inv_num)}.wav"
+                                    inv_chord_filename = (
+                                        f"{prefix}-{safe_chord_name}-{inv_num}stInv.wav"
+                                    )
                                     inv_chord_path = os.path.join(
                                         inversions_dir, inv_chord_filename
                                     )
@@ -1849,7 +1788,6 @@ def process_directory(
     generate_inversions=False,
     selected_chord_types=None,  # New parameter for selected chord types
     selected_inversions=None,  # New parameter for selected inversions
-    overwrite=False,  # Add overwrite parameter
 ):
     """Process a single directory to generate missing samples."""
     # Acquire lock for consistent console output when running in parallel
@@ -2033,13 +1971,13 @@ def generate_full_chord_samples(chord_dir, prefix):
 
         # Extract chord type and inversion info
         if is_inversion:
-            # Pattern for inversions: prefix-ShortChordName_invN.wav
-            chord_match = re.search(rf"{prefix}-(.+)_inv(\d+)\.wav$", filename)
+            # Pattern for inversions: prefix-ChordType-InversionNum-NoteOctave.wav -> now prefix-ChordType-InversionNum.wav
+            chord_match = re.search(rf"{prefix}-(.+)-(\d+stInv)\.wav$", filename)
             if not chord_match:
                 continue
 
             chord_type = chord_match.group(1)
-            inversion_num = f"{chord_match.group(2)}stInv"  # Keep the stInv suffix for internal tracking
+            inversion_num = chord_match.group(2)
 
             # Create a key for this inversion type
             key = (quality, chord_type, inversion_num)
