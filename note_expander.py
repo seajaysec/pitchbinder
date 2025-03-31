@@ -3099,6 +3099,9 @@ def status_heartbeat(stop_event, directories, interval=10):
         directories: List of directories being processed
         interval: How often to print updates (in seconds)
     """
+    # Keep track of processed items for progress calculation
+    last_activity = {}
+
     while not stop_event.is_set():
         # Wait for the specified interval, but check stop_event more frequently
         for _ in range(interval):
@@ -3116,6 +3119,9 @@ def status_heartbeat(stop_event, directories, interval=10):
             completed_count = 0
             error_count = 0
 
+            # Collect current activity to compare with last update
+            current_activity = {}
+
             for directory in directories:
                 dir_name = os.path.basename(directory)
                 status = processing_status.get(directory, {})
@@ -3127,6 +3133,65 @@ def status_heartbeat(stop_event, directories, interval=10):
                 message = status.get("message", "Unknown")
                 timestamp = status.get("timestamp", "Unknown")
                 status_type = status.get("type", "info")
+
+                # Store current activity for this directory
+                current_activity[directory] = {
+                    "message": message,
+                    "timestamp": timestamp,
+                    "type": status_type,
+                }
+
+                # Check for chord generation
+                if "chord generation" in message.lower():
+                    # Look for chord files in the exp_chords directory
+                    chord_dir = os.path.join(directory, "exp_chords")
+                    if os.path.exists(chord_dir):
+                        chord_count = 0
+                        inversion_count = 0
+
+                        # Count chord files and inversions
+                        for root, _, files in os.walk(chord_dir):
+                            for file in files:
+                                if file.endswith(".wav"):
+                                    if "stInv" in file:
+                                        inversion_count += 1
+                                    else:
+                                        chord_count += 1
+
+                        # Add counts to the status message
+                        if chord_count > 0 or inversion_count > 0:
+                            message = f"{message} - Generated {chord_count} chords and {inversion_count} inversions so far"
+
+                    # Check for progress since last update
+                    if directory in last_activity:
+                        last_msg = last_activity[directory].get("message", "")
+                        if "Generated" in last_msg and "Generated" in message:
+                            # Extract counts from both messages
+                            try:
+                                last_counts = re.search(
+                                    r"Generated (\d+) chords and (\d+) inversions",
+                                    last_msg,
+                                )
+                                current_counts = re.search(
+                                    r"Generated (\d+) chords and (\d+) inversions",
+                                    message,
+                                )
+
+                                if last_counts and current_counts:
+                                    last_chord_count = int(last_counts.group(1))
+                                    last_inv_count = int(last_counts.group(2))
+                                    current_chord_count = int(current_counts.group(1))
+                                    current_inv_count = int(current_counts.group(2))
+
+                                    # Calculate new items since last update
+                                    new_chords = current_chord_count - last_chord_count
+                                    new_invs = current_inv_count - last_inv_count
+
+                                    if new_chords > 0 or new_invs > 0:
+                                        message += f" (+{new_chords} chords, +{new_invs} inversions since last update)"
+                            except Exception:
+                                # If parsing fails, just use the original message
+                                pass
 
                 if status_type == "success":
                     print(f"{SUCCESS}{dir_name}: {message} ({timestamp}){RESET}")
@@ -3143,6 +3208,9 @@ def status_heartbeat(stop_event, directories, interval=10):
                 f"{INFO}Summary: {active_count} active, {completed_count} completed, {error_count} failed{RESET}"
             )
             print("=" * 80 + "\n")
+
+            # Update last activity for next comparison
+            last_activity = current_activity
 
 
 if __name__ == "__main__":
