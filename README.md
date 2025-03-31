@@ -65,41 +65,32 @@ The note-expander uses a questionary-based interactive interface that guides you
 
 2. **Recursive Processing**
    ```
-   Process all subdirectories recursively? (Y/n)
+   Process all subdirectories recursively? (y/n)
    ```
-   - Choose 'y' to process all subdirectories containing samples (default)
+   - Choose 'y' to process all subdirectories containing samples
    - Choose 'n' to only process the main directory
 
-3. **Parallel Processing**
+3. **Custom Prefix**
    ```
-   How many parallel workers to use?
-   > Automatic (8 workers)
-     Custom number...
+   Use a custom prefix for generated files? (Otherwise auto-detect) (y/n)
    ```
-   - Choose 'Automatic' to use the recommended number of workers
-   - Choose 'Custom number...' to specify how many workers to use
+   - If you select 'y', you'll be prompted to enter a custom prefix
+   - If you select 'n', the prefix will be automatically detected from your existing samples
 
 4. **Additional Options**
    ```
    Select additional options:
-   > [x] Generate a single WAV file with all notes in sequence
-     [x] Match all generated samples to the average length of source samples
-     [x] Generate chord samples
+   > [ ] Generate a single WAV file with all notes in sequence
+     [ ] Match all generated samples to the average length of source samples
+     [ ] Generate chord samples
      [ ] Play all notes when done
      [ ] Overwrite existing expansion directories
      [ ] Keep all generated files (don't clean up artifacts)
-     [ ] Use a custom prefix for generated files (Otherwise auto-detect)
    ```
-   - The first three options are selected by default
    - Use arrow keys to navigate
    - Press Space to select/deselect options
    - Press Enter when done
    
-   If you select "Use a custom prefix", you'll be prompted:
-   ```
-   Enter the prefix for generated files:
-   ```
-
 5. **Chord Generation (if selected)**
    
    If you selected "Generate chord samples", you'll see additional prompts:
