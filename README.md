@@ -1,10 +1,10 @@
-# Note Expander
+# Pitchbinder - Single notes to M8 sliced ranges and chords
 
 A powerful tool for expanding a small set of piano samples into a complete 8-octave range.
 
 ## Overview
 
-Note Expander takes a few piano samples with note information in their filenames and intelligently generates the missing notes across the full piano range (C1-B8). It uses high-quality pitch shifting and optional time stretching to create natural-sounding samples for all 88 piano keys.
+Pitchbinder takes a few piano samples with note information in their filenames and intelligently generates the missing notes across the full piano range (C1-B8). It uses high-quality pitch shifting and optional time stretching to create natural-sounding samples for all 88 piano keys.
 
 ## Features
 
@@ -19,7 +19,7 @@ Note Expander takes a few piano samples with note information in their filenames
 
 ## How It Works
 
-Note Expander analyzes your existing samples, identifies the notes they represent, and uses pitch-shifting algorithms to generate the missing notes. It finds the closest existing sample to use as a source for each new note, ensuring the most natural sound possible.
+Pitchbinder analyzes your existing samples, identifies the notes they represent, and uses pitch-shifting algorithms to generate the missing notes. It finds the closest existing sample to use as a source for each new note, ensuring the most natural sound possible.
 
 ### Supported Filename Formats
 
