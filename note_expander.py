@@ -2536,18 +2536,8 @@ def interactive_mode():
             ).ask()
             max_workers = int(max_workers)
 
-    # Ask about prefix
-    use_custom_prefix = questionary.confirm(
-        "Use a custom prefix for generated files? (Otherwise auto-detect)",
-        default=False,
-        style=custom_style,
-    ).ask()
-
+    # Don't ask about prefix upfront
     prefix = None
-    if use_custom_prefix:
-        prefix = questionary.text(
-            "Enter the prefix for generated files:", style=custom_style
-        ).ask()
 
     # Ask about other options
     options = questionary.checkbox(
@@ -2566,6 +2556,10 @@ def interactive_mode():
             questionary.Choice(
                 "Keep all generated files (don't clean up artifacts)", "keep_artifacts"
             ),
+            questionary.Choice(
+                "Use a custom prefix for generated files (Otherwise auto-detect)",
+                "custom_prefix",
+            ),
         ],
         style=custom_style,
     ).ask()
@@ -2578,7 +2572,14 @@ def interactive_mode():
         "play": "play" in options,
         "overwrite": "overwrite" in options,
         "keep_artifacts": "keep_artifacts" in options,
+        "custom_prefix": "custom_prefix" in options,
     }
+
+    # If custom prefix is selected, ask for the prefix
+    if options_dict["custom_prefix"]:
+        prefix = questionary.text(
+            "Enter the prefix for generated files:", style=custom_style
+        ).ask()
 
     # If chord generation is selected, ask for more details
     chord_qualities = None
