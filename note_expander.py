@@ -1786,7 +1786,6 @@ def process_directory(
     generate_inversions=False,
     selected_chord_types=None,  # New parameter for selected chord types
     selected_inversions=None,  # New parameter for selected inversions
-    overwrite=False,
 ):
     """Process a single directory to generate missing samples."""
     # Acquire lock for consistent console output when running in parallel
@@ -2636,39 +2635,27 @@ def interactive_mode():
                 ):
                     if notes_count >= 3:  # Only process chords that can have inversions
                         possible_inversions = notes_count - 1
-                        if possible_inversions not in chords_by_inversions:
-                            chords_by_inversions[possible_inversions] = []
-                        chords_by_inversions[possible_inversions].append(
-                            (quality, chord_type)
+                        inversion_choices = [
+                            get_ordinal_suffix(i)
+                            for i in range(1, possible_inversions + 1)
+                        ]
+
+                        header = f"Select inversions for {chord_type} ({quality}) - {notes_count}-note chord:"
+                        print_info(
+                            f"\nPossible inversions: {', '.join(inversion_choices)}"
                         )
 
-                # Sort by number of inversions
-                for num_inversions in sorted(chords_by_inversions.keys()):
-                    chords = chords_by_inversions[num_inversions]
-                    inversion_choices = [
-                        get_ordinal_suffix(i) for i in range(1, num_inversions + 1)
-                    ]
+                        selected = questionary.checkbox(
+                            header,
+                            choices=inversion_choices,
+                            style=custom_style,
+                        ).ask()
 
-                    # Create a descriptive header showing which chords these inversions apply to
-                    chord_list = [
-                        f"{chord_type} ({quality})" for quality, chord_type in chords
-                    ]
-                    header = f"Select inversions for {num_inversions}-note chords:"
-                    print_info(f"\nChords in this group: {', '.join(chord_list)}")
-
-                    selected = questionary.checkbox(
-                        header,
-                        choices=inversion_choices,
-                        style=custom_style,
-                    ).ask()
-
-                    if selected:
-                        # Convert from ordinal format to inversion numbers
-                        inversion_numbers = [
-                            int(inv.rstrip("stndrh")) for inv in selected
-                        ]
-                        # Store the selection for all chords with this number of inversions
-                        for quality, chord_type in chords:
+                        if selected:
+                            # Convert from ordinal format to inversion numbers
+                            inversion_numbers = [
+                                int(inv.rstrip("stndrh")) for inv in selected
+                            ]
                             selected_inversions[(quality, chord_type)] = (
                                 inversion_numbers
                             )
