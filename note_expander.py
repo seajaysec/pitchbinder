@@ -1697,7 +1697,7 @@ def cleanup_artifacts(
 
             if os.path.exists(chord_path):
                 # Determine if this is an inversion
-                is_inversion = "inv" in chord_path or "-stInv-" in chord_filename
+                is_inversion = "inv" in chord_path or "stInv" in chord_filename
 
                 # Create quality directory in exp/chords
                 quality_dir = os.path.join(chords_dir, quality)
