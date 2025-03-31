@@ -1849,6 +1849,7 @@ def process_directory(
     generate_inversions=False,
     selected_chord_types=None,  # New parameter for selected chord types
     selected_inversions=None,  # New parameter for selected inversions
+    overwrite=False,  # Add overwrite parameter
 ):
     """Process a single directory to generate missing samples."""
     # Acquire lock for consistent console output when running in parallel
