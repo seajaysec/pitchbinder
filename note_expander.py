@@ -2499,7 +2499,7 @@ def interactive_mode():
 
     # Ask about recursive mode
     recurse = questionary.confirm(
-        "Process all subdirectories recursively?", default=False, style=custom_style
+        "Process all subdirectories recursively?", default=True, style=custom_style
     ).ask()
 
     # Ask about parallelization only if recursive mode is selected
