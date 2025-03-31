@@ -1312,6 +1312,20 @@ def generate_chords(
     # Generate full chord sample files by type
     full_chord_filenames = generate_full_chord_samples(chord_dir, prefix)
 
+    # Do final updates before returning
+    with tqdm_lock:
+        # Close the quality progress bar
+        quality_pbar.update(1)
+
+    # Generate full chord samples
+    print_info("Generating full chord samples...")
+    full_chord_filenames = generate_full_chord_samples(chord_dir, prefix)
+    print_info(f"Generated {len(full_chord_filenames)} full chord sample files")
+
+    # Debug info before returning
+    print_info(f"Returning chord_dir: {chord_dir}")
+    print_info(f"Returning full_chord_filenames: {full_chord_filenames}")
+
     return chord_dir, full_chord_filenames
 
 
