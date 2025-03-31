@@ -2800,7 +2800,17 @@ def interactive_mode():
 
                     # Display grouped inversions
                     for inv_list, chords in inv_to_chords.items():
-                        inv_str = ", ".join(get_ordinal_suffix(i) for i in inv_list)
+                        inv_suffixes = []
+                        for i in inv_list:
+                            if i == 1:
+                                inv_suffixes.append("1st")
+                            elif i == 2:
+                                inv_suffixes.append("2nd")
+                            elif i == 3:
+                                inv_suffixes.append("3rd")
+                            else:
+                                inv_suffixes.append(f"{i}th")
+                        inv_str = ", ".join(inv_suffixes)
                         chord_str = ", ".join(chords)
                         print(f"  {inv_str} for: {chord_str}")
                 else:
