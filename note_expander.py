@@ -910,7 +910,7 @@ def generate_chords(
                 f"Filtered to {len(chord_defs)} chord types in qualities: {', '.join(chord_qualities)}"
             )
 
-        # Further filter by specific chord names if provided (do this early to reduce overhead)
+        # Further filter by specific chord names if provided
         if selected_chords:
             chord_defs = [chord for chord in chord_defs if chord[0] in selected_chords]
             print_info(f"Filtered to {len(chord_defs)} specific chord types")
@@ -933,8 +933,74 @@ def generate_chords(
                 chord_by_quality[quality] = []
             chord_by_quality[quality].append((chord_name, semitones))
 
-        # Create quality directories in advance
-        for quality in chord_by_quality:
+        # Count total chords to generate for progress tracking
+        total_chords = 0
+        for quality, chords in chord_by_quality.items():
+            for chord_name, semitones in chords:
+                # Count chords for all octaves (1-8)
+                for octave in range(1, 9):
+                    for note in notes:
+                        # Skip if the highest note in the chord would be above B8
+                        highest_semitone = max(semitones)
+                        highest_note, highest_octave = get_note_from_semitone(
+                            note, octave, highest_semitone
+                        )
+                        if highest_octave <= 8:
+                            total_chords += 1
+
+                            # Add count for inversions if enabled
+                            if generate_inversions:
+                                inv_to_generate = []
+                                if len(semitones) >= 3:
+                                    all_inversions = generate_chord_inversions(
+                                        semitones
+                                    )
+                                    if (
+                                        selected_inversions
+                                        and chord_name in selected_inversions
+                                    ):
+                                        selected_inv_numbers = selected_inversions[
+                                            chord_name
+                                        ]
+                                        inv_to_generate = [
+                                            inv
+                                            for inv in all_inversions
+                                            if inv[0] in selected_inv_numbers
+                                        ]
+                                    else:
+                                        inv_to_generate = all_inversions
+
+                                    total_chords += len(inv_to_generate)
+
+        # Set up progress bars with fixed positions but offset for thread safety
+        # Use higher positions to avoid conflicts with other functions' progress bars
+        base_position = 3  # Start at position 3 to avoid conflicts
+
+        # Create a master progress bar at the bottom position
+        master_pbar = tqdm(
+            total=total_chords,
+            desc=f"Overall chord progress for {os.path.basename(source_dir)}",
+            position=base_position + 2,  # Fixed position at the bottom
+            leave=True,
+            bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.GREEN, RESET),
+        )
+
+        # Create a quality progress bar above the master bar
+        quality_pbar = tqdm(
+            total=len(chord_by_quality),
+            desc="Chord quality progress",
+            position=base_position + 1,  # Fixed position above master bar
+            leave=True,
+            bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.BLUE, RESET),
+        )
+
+    # Store filenames of all generated chords for full sample generation later
+    full_chord_filenames = []
+
+    # Generate chords for each quality
+    for quality_idx, (quality, chords) in enumerate(chord_by_quality.items()):
+        with tqdm_lock:
+            # Create a directory for this chord quality
             quality_dir = os.path.join(chord_dir, quality)
             if not os.path.exists(quality_dir):
                 os.makedirs(quality_dir)
@@ -945,60 +1011,54 @@ def generate_chords(
                 if not os.path.exists(inversions_dir):
                     os.makedirs(inversions_dir)
 
-        # Count total chords to generate for progress tracking
-        total_chords = 0
-        chord_tasks = []
+            # Update the current task message
+            tqdm.write(
+                f"{INFO}Generating {len(chords)} {quality} chord types...{RESET}"
+            )
 
-        # Prepare generation tasks for all chords - but be smarter about it
-        # First determine the actual chords and inversions to process
-        actual_chords_to_process = []
-        for quality, chords in chord_by_quality.items():
-            for chord_name, semitones in chords:
-                quality_dir = os.path.join(chord_dir, quality)
-                inversions_dir = (
-                    os.path.join(quality_dir, "inversions")
-                    if generate_inversions
-                    else None
-                )
+            # Create a chord type progress bar
+            chord_pbar = tqdm(
+                total=len(chords),
+                desc=f"{quality} chords",
+                position=base_position,  # Top position for current task
+                leave=False,  # Don't leave this bar when done
+                bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.YELLOW, RESET),
+            )
 
-                # Clean up chord name for filenames
-                safe_chord_name = re.sub(r"[^a-zA-Z0-9]", "", chord_name)
+        # Generate each chord type with roots from C1 to B8
+        for chord_idx, (chord_name, semitones) in enumerate(chords):
+            # Create a safe filename from the chord name
+            safe_chord_name = re.sub(r"[^a-zA-Z0-9]", "", chord_name)
 
-                # Get inversions if needed (only calculate if we'll actually use them)
-                inversions = []
-                if generate_inversions:
-                    inversions = generate_chord_inversions(semitones)
-                    # Filter inversions if specific ones were selected
-                    if selected_inversions and chord_name in selected_inversions:
-                        selected_inv_numbers = selected_inversions[chord_name]
-                        inversions = [
-                            inv for inv in inversions if inv[0] in selected_inv_numbers
-                        ]
+            # Update chord progress
+            with tqdm_lock:
+                chord_pbar.set_description(f"Generating {chord_name}")
 
-                actual_chords_to_process.append(
-                    {
-                        "quality": quality,
-                        "quality_dir": quality_dir,
-                        "chord_name": chord_name,
-                        "safe_chord_name": safe_chord_name,
-                        "semitones": semitones,
-                        "generate_inversions": generate_inversions
-                        and len(inversions) > 0,
-                        "inversions": inversions,
-                        "inversions_dir": inversions_dir,
-                    }
-                )
+            # First generate the core chords (C2-B4) directly
+            core_chords = {}
 
-        # Get optimal worker count
-        num_workers = get_optimal_workers()
-        print_info(f"Using {num_workers} workers for chord generation")
+            # Generate inversions if requested and applicable
+            inversions = []
+            if generate_inversions and len(semitones) >= 3:
+                all_inversions = generate_chord_inversions(semitones)
 
-        # Create tasks for batch processing - prioritize better octave distribution
-        # First create core octave tasks (C2-B4) as these are most important
-        for octave in range(2, 5):  # Octaves 2, 3, 4
-            for note in notes:
-                for chord_info in actual_chords_to_process:
-                    semitones = chord_info["semitones"]
+                # Filter inversions if specific ones were selected
+                if selected_inversions and chord_name in selected_inversions:
+                    selected_inv_numbers = selected_inversions[chord_name]
+                    inversions = [
+                        inv for inv in all_inversions if inv[0] in selected_inv_numbers
+                    ]
+                else:
+                    inversions = all_inversions
+
+                if inversions:
+                    tqdm.write(
+                        f"{INFO}    Will generate {len(inversions)} inversions for {chord_name}{RESET}"
+                    )
+
+            # Generate core chords with roots from C2 to B4
+            for octave in range(2, 5):
+                for note in notes:
                     # Skip if the highest note in the chord would be above B8
                     highest_semitone = max(semitones)
                     highest_note, highest_octave = get_note_from_semitone(
@@ -1007,538 +1067,98 @@ def generate_chords(
                     if highest_octave > 8:
                         continue
 
-                    # Add chord task
-                    task = {
-                        "type": "chord",
-                        "note": note,
-                        "octave": octave,
-                        "semitones": semitones,
-                        "quality": chord_info["quality"],
-                        "quality_dir": chord_info["quality_dir"],
-                        "chord_name": chord_info["chord_name"],
-                        "safe_chord_name": chord_info["safe_chord_name"],
-                        "generate_inversions": chord_info["generate_inversions"],
-                        "inversions": chord_info["inversions"],
-                        "inversions_dir": chord_info["inversions_dir"],
-                        "prefix": prefix,
-                        "source_dir": source_dir,
-                        "target_dir": target_dir,
-                        "all_samples": all_samples,
-                    }
-                    chord_tasks.append(task)
-                    total_chords += 1
-
-                    # Count inversions
-                    if chord_info["generate_inversions"] and chord_info["inversions"]:
-                        total_chords += len(chord_info["inversions"])
-
-        # Set up progress tracking
-        position = 1
-        pbar = tqdm(
-            total=total_chords * 2,  # Double for core + extended range
-            desc="Generating chord samples",
-            position=position,
-            leave=True,
-            bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.BLUE, RESET),
-        )
-
-        # Dictionary to store chord audio for pitch shifting
-        core_chords = {}
-
-        # To store filenames of chords for full sample generation later
-        full_chord_filenames = []
-
-        # Before starting parallel processing
-        with tqdm_lock:
-            total_chord_types = sum(
-                len(chords) for _, chords in chord_by_quality.items()
-            )
-            update_status(
-                source_dir,
-                f"Generating {total_chord_types} chord types with {num_workers} parallel workers",
-                "info",
-            )
-
-        # Track progress at a directory level
-        chord_count = 0
-        inversion_count = 0
-        progress_lock = threading.Lock()
-
-        # Progress update function - reduce update frequency to every 100 items
-        def update_progress(is_chord=True, is_inversion=False, count=1):
-            nonlocal chord_count, inversion_count
-            with progress_lock:
-                if is_chord:
-                    chord_count += count
-                if is_inversion:
-                    inversion_count += count
-
-                # Update status message periodically (less frequently to reduce overhead)
-                if (chord_count + inversion_count) % 100 == 0:
-                    update_status(
+                    # Generate the chord
+                    chord_audio, sr = generate_chord(
+                        note,
+                        octave,
+                        semitones,
+                        all_samples,
                         source_dir,
-                        f"Chord generation in progress - Generated {chord_count} chords and {inversion_count} inversions so far",
-                        "info",
+                        target_dir,
+                        prefix,
+                        chord_duration_factor=4.0,
+                        recursion_depth=0,  # Start with recursion depth 0
                     )
 
-        # Optimized batch processing function
-        def process_batch(batch):
-            results = []
-            pitch_shift_results = {}
-
-            with tqdm_lock:
-                tqdm.write(f"{INFO}Processing batch of {len(batch)} tasks{RESET}")
-
-            for task in batch:
-                try:
-                    if task["type"] == "chord":
-                        with tqdm_lock:
-                            tqdm.write(
-                                f"{INFO}Processing chord task: {task['chord_name']} at {task['note']}{task['octave']}{RESET}"
-                            )
-                        result, inv_results, path = process_chord_task(task)
-                        if result:
-                            results.append((result, inv_results, path))
-                            with tqdm_lock:
-                                tqdm.write(
-                                    f"{SUCCESS}Completed chord task: {task['chord_name']} at {task['note']}{task['octave']}{RESET}"
-                                )
-                        else:
-                            with tqdm_lock:
-                                tqdm.write(
-                                    f"{WARNING}Chord task returned no result: {task['chord_name']} at {task['note']}{task['octave']}{RESET}"
-                                )
-                    elif task["type"] == "pitch_shift":
-                        with tqdm_lock:
-                            tqdm.write(
-                                f"{INFO}Processing pitch shift task: {task['chord_name']} at {task['note']}{task['octave']}{RESET}"
-                            )
-                        result, inv_results, path = pitch_shift_chord_task(task)
-                        if result:
-                            results.append((result, inv_results, path))
-                            with tqdm_lock:
-                                tqdm.write(
-                                    f"{SUCCESS}Completed pitch shift task: {task['chord_name']} at {task['note']}{task['octave']}{RESET}"
-                                )
-                        else:
-                            with tqdm_lock:
-                                tqdm.write(
-                                    f"{WARNING}Pitch shift task returned no result: {task['chord_name']} at {task['note']}{task['octave']}{RESET}"
-                                )
-                except Exception as e:
-                    with tqdm_lock:
-                        tqdm.write(
-                            f"{ERROR}Exception processing task in batch: {str(e)}{RESET}"
+                    if chord_audio is not None:
+                        # Save the chord
+                        chord_filename = (
+                            f"{prefix}-{safe_chord_name}-{note}{octave}.wav"
                         )
+                        chord_path = os.path.join(quality_dir, chord_filename)
+                        sf.write(chord_path, chord_audio, sr)
+                        tqdm.write(f"{SUCCESS}    Generated {chord_filename}{RESET}")
 
-            with tqdm_lock:
-                tqdm.write(
-                    f"{INFO}Batch processing complete, {len(results)} successful tasks{RESET}"
-                )
+                        # Update master progress bar
+                        master_pbar.update(1)
 
-            return results
-
-        # Function to process chord task in parallel
-        def process_chord_task(task):
-            try:
-                note = task["note"]
-                octave = task["octave"]
-                semitones = task["semitones"]
-                quality = task["quality"]
-                quality_dir = task["quality_dir"]
-                chord_name = task["chord_name"]
-                safe_chord_name = task["safe_chord_name"]
-                generate_inversions = task["generate_inversions"]
-                inversions = task["inversions"]
-                inversions_dir = task["inversions_dir"]
-                prefix = task["prefix"]
-                source_dir = task["source_dir"]
-                target_dir = task["target_dir"]
-                all_samples = task["all_samples"]
-
-                # Debug information - add this for troubleshooting
-                with tqdm_lock:
-                    tqdm.write(
-                        f"{INFO}Starting chord generation for {chord_name} at {note}{octave}{RESET}"
-                    )
-
-                # Generate the chord
-                chord_audio, sr = generate_chord(
-                    note,
-                    octave,
-                    semitones,
-                    all_samples,
-                    source_dir,
-                    target_dir,
-                    prefix,
-                    chord_duration_factor=4.0,
-                    recursion_depth=0,  # Start with recursion depth 0
-                )
-
-                # Check if chord generation returned None
-                if chord_audio is None:
-                    with tqdm_lock:
-                        tqdm.write(
-                            f"{WARNING}Chord generation returned None for {chord_name} at {note}{octave}{RESET}"
-                        )
-                    return None, None, None
-
-                # Save the chord
-                chord_filename = f"{prefix}-{safe_chord_name}-{note}{octave}.wav"
-                chord_path = os.path.join(quality_dir, chord_filename)
-                sf.write(chord_path, chord_audio, sr)
-
-                # Update progress counter
-                update_progress(is_chord=True)
-
-                # Debug success information
-                with tqdm_lock:
-                    tqdm.write(
-                        f"{SUCCESS}Successfully generated chord: {chord_filename}{RESET}"
-                    )
-
-                # Store the result
-                result = {
-                    "type": "chord",
-                    "note": note,
-                    "octave": octave,
-                    "chord_name": chord_name,
-                    "quality": quality,
-                    "chord_path": chord_path,
-                    "chord_audio": chord_audio,
-                    "sr": sr,
-                }
-
-                # Generate inversions if needed
-                inversion_results = []
-                if generate_inversions and inversions:
-                    for inv_num, inv_semitones in inversions:
-                        try:
-                            # Get the new root note for this inversion
-                            new_root, new_octave = get_note_from_semitone(
-                                note, octave, semitones[inv_num]
-                            )
-
-                            # Debug information
-                            with tqdm_lock:
-                                tqdm.write(
-                                    f"{INFO}Starting inversion generation for {chord_name}, inversion {inv_num} at {new_root}{new_octave}{RESET}"
-                                )
-
-                            # Generate the inverted chord
-                            inv_chord_audio, inv_sr = generate_chord(
-                                new_root,
-                                new_octave,
-                                inv_semitones,
-                                all_samples,
-                                source_dir,
-                                target_dir,
-                                prefix,
-                                chord_duration_factor=4.0,
-                                recursion_depth=0,  # Start with recursion depth 0
-                            )
-
-                            # Check if inversion generation returned None
-                            if inv_chord_audio is None:
-                                with tqdm_lock:
-                                    tqdm.write(
-                                        f"{WARNING}    Inversion generation returned None for inversion {inv_num} of {chord_name} at {new_root}{new_octave}{RESET}"
-                                    )
-                                continue
-
-                            # Save the inverted chord with inversion number in filename
-                            inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{new_root}{new_octave}.wav"
-                            inv_chord_path = os.path.join(
-                                inversions_dir, inv_chord_filename
-                            )
-                            sf.write(inv_chord_path, inv_chord_audio, inv_sr)
-
-                            # Update progress counter
-                            update_progress(is_chord=False, is_inversion=True)
-
-                            with tqdm_lock:
-                                tqdm.write(
-                                    f"{SUCCESS}    Generated {inv_chord_filename}{RESET}"
-                                )
-
-                            inversion_results.append(
-                                {
-                                    "inv_num": inv_num,
-                                    "inv_chord_path": inv_chord_path,
-                                    "success": True,
-                                }
-                            )
-                        except Exception as e:
-                            # If there's an error, fall back to using the original chord audio
-                            with tqdm_lock:
-                                tqdm.write(
-                                    f"{WARNING}    Error generating inversion {inv_num} for {chord_name}: {str(e)}{RESET}"
-                                )
-
-                            # Save the inverted chord with inversion number in filename using the original chord audio as fallback
-                            inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
-                            inv_chord_path = os.path.join(
-                                inversions_dir, inv_chord_filename
-                            )
-                            sf.write(inv_chord_path, chord_audio, sr)
-
-                            # Update progress counter
-                            update_progress(is_chord=False, is_inversion=True)
-
-                            with tqdm_lock:
-                                tqdm.write(
-                                    f"{SUCCESS}    Generated {inv_chord_filename} (fallback){RESET}"
-                                )
-
-                            inversion_results.append(
-                                {
-                                    "inv_num": inv_num,
-                                    "inv_chord_path": inv_chord_path,
-                                    "success": True,
-                                    "fallback": True,
-                                }
-                            )
-
-                return result, inversion_results, chord_path
-            except Exception as e:
-                with tqdm_lock:
-                    tqdm.write(
-                        f"{ERROR}Error generating {task['chord_name']} at {task['note']}{task['octave']}: {str(e)}{RESET}"
-                    )
-                return None, None, None
-
-        # Function to pitch shift a chord
-        def pitch_shift_chord_task(task):
-            try:
-                note = task["note"]
-                octave = task["octave"]
-                semitones = task["semitones"]
-                quality = task["quality"]
-                quality_dir = task["quality_dir"]
-                chord_name = task["chord_name"]
-                safe_chord_name = task["safe_chord_name"]
-                inversions = task["inversions"]
-                inversions_dir = task["inversions_dir"]
-                prefix = task["prefix"]
-                source_note = task["source_note"]
-                source_octave = task["source_octave"]
-                source_audio = task["source_audio"]
-                sr = task["sr"]
-
-                with tqdm_lock:
-                    tqdm.write(
-                        f"{INFO}Starting pitch shift from {source_note}{source_octave} to {note}{octave} for {chord_name}{RESET}"
-                    )
-
-                # Calculate the ratio for pitch shifting
-                source_freq = get_note_frequency(source_note, source_octave)
-                target_freq = get_note_frequency(note, octave)
-                shift_factor = target_freq / source_freq
-
-                with tqdm_lock:
-                    tqdm.write(
-                        f"{INFO}    Pitch shifting {source_note}{source_octave} chord to {note}{octave} (factor: {shift_factor:.2f})...{RESET}"
-                    )
-
-                # Resample the audio
-                if shift_factor != 1.0:
-                    # For higher notes, we need to shorten the sample (speed up)
-                    # For lower notes, we need to lengthen the sample (slow down)
-                    new_length = int(len(source_audio) / shift_factor)
-
-                    with tqdm_lock:
-                        tqdm.write(
-                            f"{INFO}    Resampling from {len(source_audio)} to {new_length} samples{RESET}"
-                        )
-
-                    new_audio = signal.resample(source_audio, new_length)
-
-                    # Apply a smoother fade-out to avoid clicks
-                    if len(new_audio) > 0:
-                        fade_len = min(
-                            int(sr * 0.1), len(new_audio) // 10
-                        )  # 100ms fade or 1/10 of length
-                        envelope = np.ones_like(new_audio)
-
-                        # Only apply fade out (keep the attack intact)
-                        if fade_len > 0:
-                            envelope[-fade_len:] = np.linspace(1, 0, fade_len)
-
-                        new_audio = new_audio * envelope
-
-                    # Normalize the final output to prevent clipping
-                    if np.max(np.abs(new_audio)) > 0:
-                        new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
-
-                    # Save the pitch-shifted chord
-                    chord_filename = f"{prefix}-{safe_chord_name}-{note}{octave}.wav"
-                    chord_path = os.path.join(quality_dir, chord_filename)
-
-                    with tqdm_lock:
-                        tqdm.write(
-                            f"{INFO}    Saving pitch-shifted chord to {chord_path}{RESET}"
-                        )
-
-                    sf.write(chord_path, new_audio, sr)
-
-                    # Update progress counter
-                    update_progress(is_chord=True)
-
-                    with tqdm_lock:
-                        tqdm.write(
-                            f"{SUCCESS}    Generated {chord_filename} (pitch-shifted){RESET}"
-                        )
-
-                    # Track results
-                    result = {
-                        "type": "pitch_shifted",
-                        "chord_path": chord_path,
-                        "quality": quality,
-                        "chord_name": chord_name,
-                    }
-
-                    # Generate inversions for this chord if requested
-                    inversion_results = []
-                    if inversions:
-                        for inv_num, _ in inversions:
-                            # For pitch-shifted chords, we need to use the same approach
-                            # Instead of generating from scratch, pitch-shift the chord we just created
-                            inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
-                            inv_chord_path = os.path.join(
-                                inversions_dir, inv_chord_filename
-                            )
-
-                            with tqdm_lock:
-                                tqdm.write(
-                                    f"{INFO}    Saving inversion {inv_num} to {inv_chord_path}{RESET}"
-                                )
-
-                            # Simply save the same audio with a different name
-                            sf.write(inv_chord_path, new_audio, sr)
-
-                            # Update progress counter
-                            update_progress(is_chord=False, is_inversion=True)
-
-                            with tqdm_lock:
-                                tqdm.write(
-                                    f"{SUCCESS}    Generated {inv_chord_filename} (pitch-shifted){RESET}"
-                                )
-
-                            inversion_results.append(
-                                {
-                                    "inv_num": inv_num,
-                                    "inv_chord_path": inv_chord_path,
-                                    "success": True,
-                                }
-                            )
-
-                    return result, inversion_results, chord_path
-
-                return None, None, None
-            except Exception as e:
-                with tqdm_lock:
-                    tqdm.write(
-                        f"{ERROR}    Error pitch shifting to {task['note']}{task['octave']}: {str(e)}{RESET}"
-                    )
-                    import traceback
-
-                    tqdm.write(f"{ERROR}    {traceback.format_exc()}{RESET}")
-                return None, None, None
-
-        # Process tasks in optimized batches
-        # Each batch will have a mix of chord tasks to ensure better distribution of work
-        batch_size = max(5, min(20, len(chord_tasks) // (num_workers * 2)))
-        if batch_size < 1:
-            batch_size = 1
-
-        with tqdm_lock:
-            print_info(
-                f"Creating {len(chord_tasks) // batch_size + (1 if len(chord_tasks) % batch_size > 0 else 0)} batches of size {batch_size}"
-            )
-
-        batches = [
-            chord_tasks[i : i + batch_size]
-            for i in range(0, len(chord_tasks), batch_size)
-        ]
-
-        with tqdm_lock:
-            print_info(f"Starting concurrent processing with {num_workers} workers")
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-            # Submit batches instead of individual tasks
-            future_to_batch = {
-                executor.submit(process_batch, batch): batch for batch in batches
-            }
-
-            with tqdm_lock:
-                print_info(f"Submitted {len(future_to_batch)} batch jobs")
-
-            # Process results as they complete
-            for future in concurrent.futures.as_completed(future_to_batch):
-                batch = future_to_batch[future]
-
-                with tqdm_lock:
-                    print_info(f"Processing results for batch of size {len(batch)}")
-
-                try:
-                    batch_results = future.result()
-
-                    with tqdm_lock:
-                        print_info(
-                            f"Batch returned {len(batch_results)} successful results"
-                        )
-
-                    for result, inversion_results, chord_path in batch_results:
-                        # Update progress bar
-                        pbar.update(1)
-
-                        # Store core chord for pitch shifting
-                        if result["type"] == "chord":
-                            core_chords[(result["note"], result["octave"])] = (
-                                chord_path,
-                                result["chord_audio"],
-                                result["sr"],
-                            )
+                        # Store the chord for later use in pitch shifting
+                        core_chords[(note, octave)] = (chord_path, chord_audio, sr)
 
                         # Add to full chord filenames
-                        full_chord_filenames.append(
-                            (result["quality"], result["chord_name"], chord_path)
-                        )
+                        full_chord_filenames.append((quality, chord_name, chord_path))
 
-                        # Update for inversions
-                        if inversion_results:
-                            pbar.update(len(inversion_results))
+                        # Generate inversions for this chord if requested
+                        if generate_inversions and inversions:
+                            for inv_num, inv_semitones in inversions:
+                                try:
+                                    # Compute the new root for the inversion based on the original semitones.
+                                    # The inversion index inv_num indicates which note becomes the new root.
+                                    new_root, new_octave = get_note_from_semitone(
+                                        note, octave, semitones[inv_num]
+                                    )
 
-                except Exception as e:
-                    with tqdm_lock:
+                                    # Add additional debug log
+                                    tqdm.write(
+                                        f"{INFO}    Generating inversion {inv_num} for {chord_name} with new root {new_root}{new_octave}{RESET}"
+                                    )
+
+                                    # Try to generate the inverted chord using the inverted semitones and new root
+                                    inv_chord_audio, inv_sr = generate_chord(
+                                        new_root,
+                                        new_octave,
+                                        inv_semitones,
+                                        all_samples,
+                                        source_dir,
+                                        target_dir,
+                                        prefix,
+                                        chord_duration_factor=4.0,
+                                        recursion_depth=0,  # Start with recursion depth 0
+                                    )
+
+                                    if inv_chord_audio is not None:
+                                        # Save the inverted chord with inversion number in filename
+                                        inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{new_root}{new_octave}.wav"
+                                        inv_chord_path = os.path.join(
+                                            inversions_dir, inv_chord_filename
+                                        )
+                                        sf.write(
+                                            inv_chord_path, inv_chord_audio, inv_sr
+                                        )
+                                        tqdm.write(
+                                            f"{SUCCESS}    Generated inversion: {inv_chord_filename}{RESET}"
+                                        )
+
+                                        # Update master progress bar
+                                        master_pbar.update(1)
+                                except Exception as e:
+                                    # If there's an error, continue to the next inversion
+                                    tqdm.write(
+                                        f"{WARNING}    Error generating inversion {inv_num} for {chord_name}: {str(e)}{RESET}"
+                                    )
+                    else:
+                        # If chord generation failed, print a warning and continue
                         tqdm.write(
-                            f"{ERROR}Error processing batch results: {str(e)}{RESET}"
+                            f"{WARNING}    Failed to generate chord for {chord_name} at {note}{octave}{RESET}"
                         )
-                        import traceback
 
-                        tqdm.write(f"{ERROR}{traceback.format_exc()}{RESET}")
-                    # Update even on error - estimate based on batch size
-                    pbar.update(len(batch) * 1.5)  # Rough estimate including inversions
+            # Now generate extended range chords (C1-B1 and C5-B8) by pitch shifting
+            for octave in range(1, 9):
+                # Skip the core octaves we've already generated
+                if 2 <= octave <= 4:
+                    continue
 
-        # Update status before starting pitch-shifted chord generation
-        update_status(
-            source_dir,
-            f"Processed core octave chords - Generated {chord_count} chords and {inversion_count} inversions. Starting pitch-shifted chords...",
-            "info",
-        )
-
-        # Now create tasks for extended octave chords (C1-B1 and C5-B8)
-        pitch_shift_tasks = []
-
-        # Create batches of pitch-shift tasks for optimal distribution
-        for octave in range(1, 9):
-            # Skip the core octaves we've already generated
-            if 2 <= octave <= 4:
-                continue
-
-            for note in notes:
-                for chord_info in actual_chords_to_process:
-                    semitones = chord_info["semitones"]
+                for note in notes:
                     # Skip if the highest note in the chord would be above B8
                     highest_semitone = max(semitones)
                     highest_note, highest_octave = get_note_from_semitone(
@@ -1565,132 +1185,83 @@ def generate_chords(
                         source_note, source_octave = closest_core
                         chord_path, chord_audio, sr = core_chords[closest_core]
 
-                        task = {
-                            "type": "pitch_shift",
-                            "note": note,
-                            "octave": octave,
-                            "semitones": semitones,
-                            "quality": chord_info["quality"],
-                            "quality_dir": chord_info["quality_dir"],
-                            "chord_name": chord_info["chord_name"],
-                            "safe_chord_name": chord_info["safe_chord_name"],
-                            "generate_inversions": chord_info["generate_inversions"],
-                            "inversions": chord_info["inversions"],
-                            "inversions_dir": chord_info["inversions_dir"],
-                            "prefix": prefix,
-                            "source_note": source_note,
-                            "source_octave": source_octave,
-                            "source_audio": chord_audio,
-                            "sr": sr,
-                        }
-                        pitch_shift_tasks.append(task)
-                        total_chords += 1
+                        # Calculate the ratio for pitch shifting
+                        source_freq = get_note_frequency(source_note, source_octave)
+                        target_freq = get_note_frequency(note, octave)
+                        shift_factor = target_freq / source_freq
 
-                        # Count inversions
-                        if (
-                            chord_info["generate_inversions"]
-                            and chord_info["inversions"]
-                        ):
-                            total_chords += len(chord_info["inversions"])
-
-        # Create batches for pitch-shift tasks
-        # Normally we would use larger batches for pitch-shift tasks since they're faster than generation
-        pitch_shift_batch_size = max(
-            10, min(40, len(pitch_shift_tasks) // (num_workers * 2))
-        )
-        if pitch_shift_batch_size < 1 and pitch_shift_tasks:
-            pitch_shift_batch_size = 1
-
-        with tqdm_lock:
-            if pitch_shift_tasks:
-                print_info(
-                    f"Creating {len(pitch_shift_tasks) // pitch_shift_batch_size + (1 if len(pitch_shift_tasks) % pitch_shift_batch_size > 0 else 0)} pitch-shift batches of size {pitch_shift_batch_size}"
-                )
-            else:
-                print_info("No pitch-shift tasks to process")
-
-        pitch_shift_batches = [
-            pitch_shift_tasks[i : i + pitch_shift_batch_size]
-            for i in range(0, len(pitch_shift_tasks), pitch_shift_batch_size)
-        ]
-
-        # Process pitch-shifted chords in batches for better efficiency
-        if pitch_shift_batches:
-            with tqdm_lock:
-                print_info(
-                    f"Starting concurrent processing for pitch-shift tasks with {num_workers} workers"
-                )
-
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=num_workers
-            ) as executor:
-                # Submit batches of pitch-shift tasks
-                future_to_batch = {
-                    executor.submit(process_batch, batch): batch
-                    for batch in pitch_shift_batches
-                }
-
-                with tqdm_lock:
-                    print_info(
-                        f"Submitted {len(future_to_batch)} pitch-shift batch jobs"
-                    )
-
-                # Process results as they complete
-                for future in concurrent.futures.as_completed(future_to_batch):
-                    batch = future_to_batch[future]
-
-                    with tqdm_lock:
-                        print_info(
-                            f"Processing results for pitch-shift batch of size {len(batch)}"
+                        tqdm.write(
+                            f"{INFO}    Pitch shifting from {source_note}{source_octave} to {note}{octave} (factor: {shift_factor:.2f})...{RESET}"
                         )
 
-                    try:
-                        batch_results = future.result()
+                        # Resample the audio
+                        if shift_factor != 1.0:
+                            # For higher notes, shorten the sample (speed up)
+                            # For lower notes, lengthen the sample (slow down)
+                            new_length = int(len(chord_audio) / shift_factor)
+                            new_audio = signal.resample(chord_audio, new_length)
 
-                        with tqdm_lock:
-                            print_info(
-                                f"Pitch-shift batch returned {len(batch_results)} successful results"
+                            # Apply a gentle fade-out
+                            if len(new_audio) > 0:
+                                fade_len = min(
+                                    int(sr * 0.1), len(new_audio) // 10
+                                )  # 100ms fade or 1/10 of length
+                                if fade_len > 0:
+                                    envelope = np.ones_like(new_audio)
+                                    envelope[-fade_len:] = np.linspace(1, 0, fade_len)
+                                    new_audio = new_audio * envelope
+
+                            # Normalize to prevent clipping
+                            if np.max(np.abs(new_audio)) > 0:
+                                new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
+
+                            # Save the pitch-shifted chord
+                            chord_filename = (
+                                f"{prefix}-{safe_chord_name}-{note}{octave}.wav"
+                            )
+                            chord_path = os.path.join(quality_dir, chord_filename)
+                            sf.write(chord_path, new_audio, sr)
+                            tqdm.write(
+                                f"{SUCCESS}    Generated {chord_filename} (pitch-shifted){RESET}"
                             )
 
-                        for result, inversion_results, chord_path in batch_results:
-                            # Update progress bar
-                            pbar.update(1)
+                            # Update master progress bar
+                            master_pbar.update(1)
 
                             # Add to full chord filenames
                             full_chord_filenames.append(
-                                (result["quality"], result["chord_name"], chord_path)
+                                (quality, chord_name, chord_path)
                             )
 
-                            # Update for inversions
-                            if inversion_results:
-                                pbar.update(len(inversion_results))
+                            # Generate inversions for this chord if requested
+                            if generate_inversions and inversions:
+                                for inv_num, _ in inversions:
+                                    # Instead of generating from scratch, pitch-shift the chord we just created
+                                    inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
+                                    inv_chord_path = os.path.join(
+                                        inversions_dir, inv_chord_filename
+                                    )
+                                    sf.write(inv_chord_path, new_audio, sr)
+                                    tqdm.write(
+                                        f"{SUCCESS}    Generated {inv_chord_filename} (pitch-shifted){RESET}"
+                                    )
 
-                    except Exception as e:
-                        with tqdm_lock:
-                            tqdm.write(
-                                f"{ERROR}Error processing pitch shift batch results: {str(e)}{RESET}"
-                            )
-                            import traceback
+                                    # Update master progress bar
+                                    master_pbar.update(1)
 
-                            tqdm.write(f"{ERROR}{traceback.format_exc()}{RESET}")
-                        # Update even on error - estimate based on batch size
-                        pbar.update(
-                            len(batch) * 1.5
-                        )  # Rough estimate including inversions
-
-        else:
+            # Update chord progress bar after processing all octaves for this chord
             with tqdm_lock:
-                print_info("Skipping pitch-shift processing as there are no tasks")
+                chord_pbar.update(1)
 
-        # Close main progress bar
-        pbar.close()
+        # Update quality progress bar after processing all chords for this quality
+        with tqdm_lock:
+            quality_pbar.update(1)
+            chord_pbar.close()  # Close the chord progress bar
 
-        # Final status update with summary of what was generated
-        update_status(
-            source_dir,
-            f"Chord generation task complete - Generated {chord_count} chords and {inversion_count} inversions in total",
-            "info",
-        )
+    # Close progress bars
+    with tqdm_lock:
+        master_pbar.close()
+        quality_pbar.close()
 
     # Create separate full chord sample files by quality and chord type
     full_chord_filenames = generate_full_chord_samples(chord_dir, prefix)
@@ -2379,390 +1950,185 @@ def process_directory(
 
 
 def generate_full_chord_samples(chord_dir, prefix):
-    """Generate separate full sample files for each chord type with embedded slice markers."""
-    tqdm.write(f"\n{INFO}{'='*60}{RESET}")
-    tqdm.write(f"{INFO}Generating full chord sample files by type{RESET}")
-    tqdm.write(f"{INFO}{'='*60}{RESET}")
+    """Generate full chord sample files (all octaves at once) for each chord type.
 
-    # Import necessary modules for embedding slice markers
-    import struct
-    import wave
+    Args:
+        chord_dir: Directory where chord samples are saved
+        prefix: Prefix for generated files
 
-    # Find all chord WAV files in the chord directory and its subdirectories
-    chord_files = []
-    for root, _, files in os.walk(chord_dir):
-        for file in files:
-            if file.lower().endswith(".wav"):
-                chord_files.append(os.path.join(root, file))
-
-    if not chord_files:
-        tqdm.write(f"{WARNING}No chord files found to create full samples{RESET}")
-        return []
-
-    # Group chord files by chord type
-    chord_types = {}
-    inversion_types = {}
-
-    for chord_file in chord_files:
-        filename = os.path.basename(chord_file)
-        dir_name = os.path.basename(os.path.dirname(chord_file))
-
-        # Check if this is an inversion
-        is_inversion = "inversions" in os.path.dirname(chord_file)
-
-        # If it's in an inversions directory, get the parent quality directory
-        if is_inversion:
-            quality = os.path.basename(os.path.dirname(os.path.dirname(chord_file)))
-        else:
-            quality = dir_name
-
-        # Extract note and chord type
-        note_match = re.search(r"([A-G]#?\d+)\.wav$", filename)
-        if not note_match:
-            continue
-
-        note_str = note_match.group(1)
-
-        # Extract chord type and inversion info
-        if is_inversion:
-            # Pattern for inversions: prefix-ChordType-InversionNum-NoteOctave.wav
-            chord_match = re.search(
-                rf"{prefix}-(.+)-(\d+stInv)-{note_str}\.wav$", filename
-            )
-            if not chord_match:
-                continue
-
-            chord_type = chord_match.group(1)
-            inversion_num = chord_match.group(2)
-
-            # Create a key for this inversion type
-            key = (quality, chord_type, inversion_num)
-
-            if key not in inversion_types:
-                inversion_types[key] = []
-
-            inversion_types[key].append(chord_file)
-        else:
-            # Regular chord pattern: prefix-ChordType-NoteOctave.wav
-            chord_match = re.search(rf"{prefix}-(.+)-{note_str}\.wav$", filename)
-            if not chord_match:
-                continue
-
-            chord_type = chord_match.group(1)
-
-            # Create a key for this chord type
-            key = (quality, chord_type)
-
-            if key not in chord_types:
-                chord_types[key] = []
-
-            chord_types[key].append(chord_file)
-
-    total_types = len(chord_types) + len(inversion_types)
-    tqdm.write(
-        f"{INFO}Found {len(chord_types)} chord types and {len(inversion_types)} inversion types to process{RESET}"
-    )
-
-    # Create a progress bar for chord types
-    pbar = tqdm(
-        total=total_types,
-        desc="Creating full chord samples",
-        position=0,
-        leave=True,
-        bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.MAGENTA, RESET),
-    )
-
-    # Process each chord type
+    Returns:
+        List of filenames of all chord samples
+    """
     full_chord_filenames = []
 
-    # Process regular chords
-    for (quality, chord_type), files in chord_types.items():
-        # Sort files by note and octave
-        def sort_key(filepath):
-            filename = os.path.basename(filepath)
-            match = re.search(r"([A-G]#?)(\d+)\.wav$", filename)
-            if match:
-                note, octave = match.groups()
-                notes = [
-                    "C",
-                    "C#",
-                    "D",
-                    "D#",
-                    "E",
-                    "F",
-                    "F#",
-                    "G",
-                    "G#",
-                    "A",
-                    "A#",
-                    "B",
-                ]
-                note_index = notes.index(note) if note in notes else 0
-                octave_num = int(octave) if octave.isdigit() else 0
-                return (octave_num, note_index)
-            return (0, 0)
+    with tqdm_lock:
+        tqdm.write(f"{INFO}Generating full chord sample files...{RESET}")
 
-        sorted_files = sorted(files, key=sort_key)
-
-        # Load the first file to get sample rate
-        first_audio, sr = librosa.load(sorted_files[0], sr=None)
-
-        # Calculate silence duration (0.5 seconds)
-        silence_duration = int(0.5 * sr)
-        silence = np.zeros(silence_duration)
-
-        # Prepare for combined audio
-        combined_audio = np.array([])
-
-        # Prepare for slice markers
-        cue_positions = []  # Store (label, position) tuples
-        current_position = 0  # in samples
-
-        # Process each chord file
-        for i, chord_file in enumerate(sorted_files):
-            # Extract note info for slice marker
-            filename = os.path.basename(chord_file)
-            note_match = re.search(r"([A-G]#?\d+)\.wav$", filename)
-            note_str = note_match.group(1) if note_match else "Unknown"
-
-            # Load the audio
-            audio, _ = librosa.load(chord_file, sr=sr)
-
-            # Trim silence at the beginning and end
-            # Ensure audio is a numpy array
-            if isinstance(audio, tuple):
-                audio = audio[0]
-
-            # Convert to float64 for librosa.effects.trim
-            audio_float = (
-                audio.astype(np.float64) if hasattr(audio, "astype") else audio
-            )
-            audio, _ = librosa.effects.trim(audio_float, top_db=30)
-
-            # Limit each sample to 3 seconds max
-            max_length = min(len(audio), 3 * sr)
-            audio = audio[:max_length]
-
-            # Add a fade out
-            fade_samples = min(
-                int(0.1 * sr), len(audio) // 4
-            )  # 100ms fade or 1/4 of length
-            if fade_samples > 0:
-                audio[-fade_samples:] *= np.linspace(1, 0, fade_samples)
-
-            # Record the start position of this chord (in samples)
-            cue_positions.append((f"{note_str}", current_position))
-
-            # Add the chord sample to the combined audio
-            combined_audio = np.concatenate([combined_audio, audio])
-
-            # Update current position for next slice marker
-            current_position += len(audio)
-
-            # Add silence between samples (but not after the last one)
-            if i < len(sorted_files) - 1:
-                combined_audio = np.concatenate([combined_audio, silence])
-                current_position += silence_duration
-
-        # Create a safe filename from the chord type
-        safe_chord_type = re.sub(r"[^\w\-]", "_", chord_type)
-
-        # Create quality directory if it doesn't exist
-        quality_dir = os.path.join(chord_dir, quality)
-        if not os.path.exists(quality_dir):
-            os.makedirs(quality_dir)
-
-        # Save the combined audio with embedded slice markers
-        output_filename = f"{prefix}-{safe_chord_type}-Full.wav"
-        output_path = os.path.join(quality_dir, output_filename)
-
-        # First save the audio data using soundfile
-        sf.write(output_path, combined_audio, sr)
-        print(f"Generated full sample file: {output_filename} (in exp directory)")
-
-        # Now add slice markers to the WAV file
-        try:
-            # Open the WAV file for reading and writing in binary mode
-            with wave.open(output_path, "rb") as wav_read:
-                params = wav_read.getparams()
-                frames = wav_read.readframes(wav_read.getnframes())
-
-            # Create a new WAV file with slice markers
-            with wave.open(output_path + ".temp", "wb") as wav_write:
-                wav_write.setparams(params)
-
-                # Write the audio data
-                wav_write.writeframes(frames)
-
-                # Add cue chunk
-                cue_chunk = create_cue_chunk(cue_positions)
-
-                # We need to manually add the cue chunk to the file
-                # This is a bit hacky but necessary since wave module doesn't support cue chunks
-                with open(output_path + ".temp", "ab") as f:
-                    f.write(b"cue ")  # Chunk ID
-                    f.write(struct.pack("<I", len(cue_chunk)))  # Chunk size
-                    f.write(cue_chunk)  # Chunk data
-
-            # Replace the original file with the new one
-            os.replace(output_path + ".temp", output_path)
-            tqdm.write(
-                f"{SUCCESS}Added {len(cue_positions)} slice markers to {output_filename}{RESET}"
-            )
-
-        except Exception as e:
-            tqdm.write(f"{WARNING}Could not add slice markers to WAV file: {e}{RESET}")
-
-        # Store the quality and filename for later use
-        full_chord_filenames.append((quality, output_filename))
-
-        tqdm.write(
-            f"{SUCCESS}Generated full sample for {quality} {chord_type}: {output_filename}{RESET}"
+        # Scan the chord directory to find all chord types and qualities
+        chord_qualities = [
+            d
+            for d in os.listdir(chord_dir)
+            if os.path.isdir(os.path.join(chord_dir, d))
+        ]
+        pbar = tqdm(
+            total=len(chord_qualities),
+            desc="Generating full chord samples",
+            position=0,
+            leave=True,
+            bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.MAGENTA, RESET),
         )
 
-        pbar.update(1)
+        for quality in chord_qualities:
+            quality_dir = os.path.join(chord_dir, quality)
 
-    # Process inversion types - THIS IS THE ADDED CODE
-    for (quality, chord_type, inversion_num), files in inversion_types.items():
-        # Sort files by note and octave using the same sort function as before
-        sorted_files = sorted(files, key=sort_key)
+            # Skip the inversions directory when scanning for chord types
+            chord_files = [
+                f
+                for f in os.listdir(quality_dir)
+                if f.endswith(".wav") and "Inv-" not in f
+            ]
 
-        # Skip if no files found
-        if not sorted_files:
-            tqdm.write(
-                f"{WARNING}No inversion files found for {quality} {chord_type} {inversion_num}{RESET}"
-            )
-            continue
+            # Group files by chord type
+            chord_types = {}
+            for f in chord_files:
+                # Extract chord name and note/octave from filename
+                # Format: prefix-chordname-noteoctave.wav
+                match = re.match(r"([^-]+)-([^-]+)-([A-G]#?\d)\.wav", f)
+                if match:
+                    _, chord_name, note_octave = match.groups()
+                    if chord_name not in chord_types:
+                        chord_types[chord_name] = []
+                    chord_types[chord_name].append(os.path.join(quality_dir, f))
 
-        # Load the first file to get sample rate
-        first_audio, sr = librosa.load(sorted_files[0], sr=None)
-
-        # Calculate silence duration (0.5 seconds)
-        silence_duration = int(0.5 * sr)
-        silence = np.zeros(silence_duration)
-
-        # Prepare for combined audio
-        combined_audio = np.array([])
-
-        # Prepare for slice markers
-        cue_positions = []  # Store (label, position) tuples
-        current_position = 0  # in samples
-
-        # Process each inversion file
-        for i, inversion_file in enumerate(sorted_files):
-            # Extract note info for slice marker
-            filename = os.path.basename(inversion_file)
-            note_match = re.search(r"([A-G]#?\d+)\.wav$", filename)
-            note_str = note_match.group(1) if note_match else "Unknown"
-
-            # Load the audio
-            audio, _ = librosa.load(inversion_file, sr=sr)
-
-            # Trim silence at the beginning and end
-            # Ensure audio is a numpy array
-            if isinstance(audio, tuple):
-                audio = audio[0]
-
-            # Convert to float64 for librosa.effects.trim
-            audio_float = (
-                audio.astype(np.float64) if hasattr(audio, "astype") else audio
-            )
-            audio, _ = librosa.effects.trim(audio_float, top_db=30)
-
-            # Limit each sample to 3 seconds max
-            max_length = min(len(audio), 3 * sr)
-            audio = audio[:max_length]
-
-            # Add a fade out
-            fade_samples = min(
-                int(0.1 * sr), len(audio) // 4
-            )  # 100ms fade or 1/4 of length
-            if fade_samples > 0:
-                audio[-fade_samples:] *= np.linspace(1, 0, fade_samples)
-
-            # Record the start position of this inversion (in samples)
-            cue_positions.append((f"{note_str}", current_position))
-
-            # Add the inversion sample to the combined audio
-            combined_audio = np.concatenate([combined_audio, audio])
-
-            # Update current position for next slice marker
-            current_position += len(audio)
-
-            # Add silence between samples (but not after the last one)
-            if i < len(sorted_files) - 1:
-                combined_audio = np.concatenate([combined_audio, silence])
-                current_position += silence_duration
-
-        # Create a safe filename from the chord type and inversion number
-        safe_chord_type = re.sub(r"[^\w\-]", "_", chord_type)
-
-        # Create quality directory if it doesn't exist
-        quality_dir = os.path.join(chord_dir, quality)
-        if not os.path.exists(quality_dir):
-            os.makedirs(quality_dir)
-
-        # Create inversions directory
-        inversions_dir = os.path.join(quality_dir, "inversions")
-        if not os.path.exists(inversions_dir):
-            os.makedirs(inversions_dir)
-
-        # Save the combined audio with embedded slice markers
-        output_filename = f"{prefix}-{safe_chord_type}-{inversion_num}-Full.wav"
-        output_path = os.path.join(inversions_dir, output_filename)
-
-        # First save the audio data using soundfile
-        sf.write(output_path, combined_audio, sr)
-        print(
-            f"Generated full inversion sample file: {output_filename} (in exp directory)"
-        )
-
-        # Now add slice markers to the WAV file
-        try:
-            # Open the WAV file for reading and writing in binary mode
-            with wave.open(output_path, "rb") as wav_read:
-                params = wav_read.getparams()
-                frames = wav_read.readframes(wav_read.getnframes())
-
-            # Create a new WAV file with slice markers
-            with wave.open(output_path + ".temp", "wb") as wav_write:
-                wav_write.setparams(params)
-
-                # Write the audio data
-                wav_write.writeframes(frames)
-
-                # Add cue chunk
-                cue_chunk = create_cue_chunk(cue_positions)
-
-                # We need to manually add the cue chunk to the file
-                with open(output_path + ".temp", "ab") as f:
-                    f.write(b"cue ")  # Chunk ID
-                    f.write(struct.pack("<I", len(cue_chunk)))  # Chunk size
-                    f.write(cue_chunk)  # Chunk data
-
-            # Replace the original file with the new one
-            os.replace(output_path + ".temp", output_path)
-            tqdm.write(
-                f"{SUCCESS}Added {len(cue_positions)} slice markers to {output_filename}{RESET}"
+            # Create a progress bar for chord types
+            chord_type_pbar = tqdm(
+                total=len(chord_types),
+                desc=f"Processing {quality} chord types",
+                position=1,
+                leave=False,
+                bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.CYAN, RESET),
             )
 
-        except Exception as e:
-            tqdm.write(f"{WARNING}Could not add slice markers to WAV file: {e}{RESET}")
+            # Process each chord type to create a full sample
+            for chord_name, files in chord_types.items():
+                try:
+                    # Sort files by note and octave to ensure consistent order
+                    files.sort(key=lambda x: re.search(r"([A-G]#?\d)\.wav", x).group(1))
 
-        # Store the quality, subdir, and filename for later use
-        full_chord_filenames.append((quality, "inversions", output_filename))
+                    # Load all audio files for this chord type
+                    audio_data = []
+                    sr = None
 
-        tqdm.write(
-            f"{SUCCESS}Generated full sample for {quality} {chord_type} {inversion_num}: {output_filename}{RESET}"
-        )
+                    for file in files:
+                        try:
+                            data, file_sr = sf.read(file)
+                            if sr is None:
+                                sr = file_sr
+                            audio_data.append(data)
+                        except Exception as e:
+                            tqdm.write(
+                                f"{WARNING}Error loading {file}: {str(e)}{RESET}"
+                            )
 
-        pbar.update(1)
+                    if audio_data:
+                        # Find the maximum length
+                        max_length = max(len(audio) for audio in audio_data)
 
-    pbar.close()
+                        # Pad all audio to the same length
+                        padded_audio = []
+                        for audio in audio_data:
+                            padded = np.zeros((max_length,))
+                            padded[: len(audio)] = audio
+                            padded_audio.append(padded)
 
-    tqdm.write(
-        f"{SUCCESS}Generated {len(full_chord_filenames)} full chord sample files{RESET}"
-    )
+                        # Combine all octaves with crossfading
+                        combined = np.zeros((max_length,))
+
+                        # Create weights for crossfading between octaves
+                        weights = []
+                        for i in range(len(padded_audio)):
+                            # Create a weight curve that peaks at the current octave
+                            x = np.linspace(0, 1, len(padded_audio))
+                            # Gaussian-like weight centered at this octave's position
+                            w = np.exp(-((x - i / len(padded_audio)) ** 2) / 0.1)
+                            weights.append(
+                                w / np.max(w) * 0.8
+                            )  # Scale to avoid clipping
+
+                        # Apply weighted mix
+                        for i, audio in enumerate(padded_audio):
+                            combined += audio * weights[i][i]
+
+                        # Normalize the final output
+                        if np.max(np.abs(combined)) > 0:
+                            combined = combined / np.max(np.abs(combined)) * 0.95
+
+                        # Add some reverb to make the full chord sound richer
+                        try:
+                            # Simple convolution reverb
+                            impulse_length = int(sr * 1.0)  # 1 second impulse
+                            impulse = np.exp(-np.linspace(0, 10, impulse_length))
+                            impulse = impulse / np.sum(impulse)  # Normalize
+                            reverb = signal.convolve(combined, impulse, mode="full")[
+                                : len(combined)
+                            ]
+
+                            # Mix dry/wet
+                            full_chord = combined * 0.7 + reverb * 0.3
+
+                            # Save the full chord sample
+                            output_filename = (
+                                f"{prefix}-FULL-{quality}-{chord_name}.wav"
+                            )
+                            output_path = os.path.join(chord_dir, output_filename)
+                            sf.write(output_path, full_chord, sr)
+
+                            tqdm.write(
+                                f"{SUCCESS}Generated full chord sample: {output_filename}{RESET}"
+                            )
+                            full_chord_filenames.append(
+                                (quality, chord_name, output_path)
+                            )
+                        except Exception as e:
+                            tqdm.write(
+                                f"{WARNING}Error applying reverb to {chord_name}: {str(e)}{RESET}"
+                            )
+
+                            # Fallback to the non-reverb version
+                            output_filename = (
+                                f"{prefix}-FULL-{quality}-{chord_name}.wav"
+                            )
+                            output_path = os.path.join(chord_dir, output_filename)
+                            sf.write(output_path, combined, sr)
+
+                            tqdm.write(
+                                f"{SUCCESS}Generated full chord sample (no reverb): {output_filename}{RESET}"
+                            )
+                            full_chord_filenames.append(
+                                (quality, chord_name, output_path)
+                            )
+                    else:
+                        tqdm.write(
+                            f"{WARNING}No valid audio files found for {chord_name}{RESET}"
+                        )
+
+                except Exception as e:
+                    tqdm.write(
+                        f"{ERROR}Error generating full sample for {chord_name}: {str(e)}{RESET}"
+                    )
+
+                # Update the chord type progress bar
+                chord_type_pbar.update(1)
+
+            # Close the chord type progress bar
+            chord_type_pbar.close()
+
+            # Update the quality progress bar
+            pbar.update(1)
+
+        # Close the main progress bar
+        pbar.close()
+
     return full_chord_filenames
 
 
