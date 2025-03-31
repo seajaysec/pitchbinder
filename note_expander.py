@@ -897,6 +897,7 @@ def generate_chords(
     generate_inversions=False,
     selected_chord_types=None,  # New parameter for selected chord types
     selected_inversions=None,  # New parameter for selected inversions
+    overwrite=False,
 ):
     """Generate chord samples based on the provided chord definitions."""
     notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -1956,7 +1957,7 @@ def process_directory(
         chord_dir = os.path.join(source_dir, "exp_chords")
         try:
             generated_chord_dir, full_chord_filenames = generate_chords(
-                prefix,
+                dir_prefix,  # Use dir_prefix (was previously changed incorrectly)
                 all_samples,
                 source_dir,
                 chord_dir,
