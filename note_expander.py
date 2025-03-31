@@ -2036,7 +2036,9 @@ def generate_full_chord_samples(chord_dir, prefix):
         dir_name = os.path.basename(os.path.dirname(chord_file))
 
         # Check if this is an inversion
-        is_inversion = "inversions" in os.path.dirname(chord_file)
+        is_inversion = "inv" in os.path.dirname(
+            chord_file
+        ) or "inversions" in os.path.dirname(chord_file)
 
         # If it's in an inversions directory, get the parent quality directory
         if is_inversion:
@@ -2378,7 +2380,7 @@ def generate_full_chord_samples(chord_dir, prefix):
             tqdm.write(f"{WARNING}Could not add slice markers to WAV file: {e}{RESET}")
 
         # Store the quality, subdir, and filename for later use
-        full_chord_filenames.append((quality, "inversions", output_filename))
+        full_chord_filenames.append((quality, "inv", output_filename))
 
         tqdm.write(
             f"{SUCCESS}Generated full sample for {quality} {chord_type} {inversion_num}: {output_filename}{RESET}"
