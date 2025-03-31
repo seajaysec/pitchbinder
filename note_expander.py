@@ -2630,9 +2630,10 @@ def interactive_mode():
                         suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
                     return f"{n}{suffix}"
 
-                # Group chords by number of possible inversions
-                chords_by_inversions = {}
-                for quality, chord_type, notes_count in chord_types_to_process:
+                # Process each chord type individually for more granular control
+                for quality, chord_type, notes_count in sorted(
+                    chord_types_to_process, key=lambda x: (x[0], x[1])
+                ):
                     if notes_count >= 3:  # Only process chords that can have inversions
                         possible_inversions = notes_count - 1
                         if possible_inversions not in chords_by_inversions:
