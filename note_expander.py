@@ -2747,11 +2747,13 @@ def interactive_mode():
 
                 # Function to get proper ordinal suffix
                 def get_ordinal_suffix(n):
-                    if 10 <= n % 100 <= 20:
-                        suffix = "th"
+                    """Return the ordinal suffix for a number (1st, 2nd, 3rd, etc.)"""
+                    if 11 <= n % 100 <= 13:
+                        return f"{n}th"
                     else:
-                        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-                    return f"{n}{suffix}"
+                        return {1: f"{n}st", 2: f"{n}nd", 3: f"{n}rd"}.get(
+                            n % 10, f"{n}th"
+                        )
 
                 # Process each chord type individually for more granular control
                 for quality, chord_type, notes_count in sorted(
@@ -2827,17 +2829,7 @@ def interactive_mode():
 
                     # Display grouped inversions
                     for inv_list, chords in inv_to_chords.items():
-                        inv_suffixes = []
-                        for i in inv_list:
-                            if i == 1:
-                                inv_suffixes.append("1st")
-                            elif i == 2:
-                                inv_suffixes.append("2nd")
-                            elif i == 3:
-                                inv_suffixes.append("3rd")
-                            else:
-                                inv_suffixes.append(f"{i}th")
-                        inv_str = ", ".join(inv_suffixes)
+                        inv_str = ", ".join(get_ordinal_suffix(i) for i in inv_list)
                         chord_str = ", ".join(chords)
                         print(f"  {inv_str} for: {chord_str}")
                 else:
