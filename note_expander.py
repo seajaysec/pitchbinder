@@ -1961,6 +1961,12 @@ def process_directory(
 
     if chords:
         print_info("Chord generation requested. Starting chord generation process...")
+        print_info(
+            f"Chord options: chord_qualities={chord_qualities}, generate_inversions={generate_inversions}"
+        )
+        print_info(
+            f"selected_chord_types={selected_chord_types}, selected_inversions={selected_inversions}"
+        )
         chord_dir = os.path.join(source_dir, "exp_chords")
         try:
             generated_chord_dir, full_chord_filenames = generate_chords(
