@@ -1927,7 +1927,7 @@ def process_directory(
         )
         update_status(
             source_dir,
-            f"Chord generation complete: {len(full_chord_filenames)} chord types created",
+            f"Chord generation complete: {len(full_chord_filenames)} chord files created. {len(selected_chords) if selected_chords else 'All'} chord types with {len(selected_inversions) if selected_inversions else ('all' if generate_inversions else 'no')} inversions.",
             "success",
         )
 
