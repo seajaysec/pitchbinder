@@ -1018,6 +1018,9 @@ def generate_chords(
                         for i, inv_semitones in all_inversions
                         if i in inversion_settings[chord_name]
                     ]
+                    tqdm.write(
+                        f"{INFO}    Selected {len(inversions)} specific inversions for {chord_name}: {inversion_settings[chord_name]}{RESET}"
+                    )
                 elif isinstance(generate_inversions, bool) and generate_inversions:
                     # Generate all inversions
                     inversions = generate_chord_inversions(semitones)
