@@ -2582,43 +2582,56 @@ def interactive_mode():
             "Enter the prefix for generated files:", style=custom_style
         ).ask()
 
-    # Ask about other options
-    options = questionary.checkbox(
+    # Get additional options using checkboxes
+    print_info("\nSelect additional options:")
+
+    # Default to empty list if no selections are made
+    options = []
+
+    # Use questionary.checkbox with the custom style
+    option_choices = [
+        "Generate a single WAV file with all notes in sequence",
+        "Match all generated samples to the average length of source samples",
+        "Generate chord samples",
+        "Play all notes when done",
+        "Overwrite existing expansion directories",
+        "Keep all generated files (don't clean up artifacts)",
+    ]
+
+    selected_options = questionary.checkbox(
         "Select additional options:",
-        choices=[
-            questionary.Choice(
-                "Generate a single WAV file with all notes in sequence", "gen_full"
-            ),
-            questionary.Choice(
-                "Match all generated samples to the average length of source samples",
-                "time_match",
-            ),
-            questionary.Choice("Generate chord samples", "chords"),
-            questionary.Choice("Play all notes when done", "play"),
-            questionary.Choice("Overwrite existing expansion directories", "overwrite"),
-            questionary.Choice(
-                "Keep all generated files (don't clean up artifacts)", "keep_artifacts"
-            ),
-        ],
+        choices=option_choices,
         style=custom_style,
     ).ask()
 
-    # Convert options to a dictionary
+    if selected_options is None:
+        print_info("Operation cancelled.")
+        return
+
+    # Convert selected options to a dictionary
     options_dict = {
-        "gen_full": "gen_full" in options,
-        "time_match": "time_match" in options,
-        "chords": "chords" in options,
-        "play": "play" in options,
-        "overwrite": "overwrite" in options,
-        "keep_artifacts": "keep_artifacts" in options,
+        "gen_full": "Generate a single WAV file with all notes in sequence"
+        in selected_options,
+        "time_match": "Match all generated samples to the average length of source samples"
+        in selected_options,
+        "chords": "Generate chord samples" in selected_options,
+        "play": "Play all notes when done" in selected_options,
+        "overwrite": "Overwrite existing expansion directories" in selected_options,
+        "keep_artifacts": "Keep all generated files (don't clean up artifacts)"
+        in selected_options,
     }
 
-    # If chord generation is selected, ask for more details
+    # Print the selected options for debug
+    print_info(f"Selected options: {options_dict}")
+
+    # If chord generation is selected, ask for chord qualities
     chord_qualities = None
-    selected_chord_types = None  # New variable to store selected chord types
-    selected_inversions = None  # New variable to store selected inversions
+    selected_chord_types = None
+    selected_inversions = None
     generate_inversions = False
+
     if options_dict["chords"]:
+        print_info("Chord generation selected!")
         chord_mode = questionary.select(
             "How would you like to generate chords?",
             choices=["Generate all chord types", "Select specific chord qualities"],
