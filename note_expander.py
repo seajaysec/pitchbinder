@@ -2591,28 +2591,83 @@ def interactive_mode():
                 selected_inversions = None  # All inversions
             elif inversion_mode == "Select specific inversions":
                 generate_inversions = True
+                selected_inversions = {}
 
-                # Determine the maximum number of inversions possible
-                max_inversions = max(
-                    chord[3] - 1 for chord in CHORD_DEFINITIONS if chord[3] >= 3
-                )
+                # Get all selected chord types and their note counts
+                chord_types_to_process = []
+                if selected_chord_types:
+                    # Use selected chord types
+                    for quality, types in selected_chord_types.items():
+                        for chord_type in types:
+                            # Find the chord definition to get note count
+                            for name, q, semitones, notes_count in CHORD_DEFINITIONS:
+                                if name == chord_type and q == quality:
+                                    chord_types_to_process.append(
+                                        (quality, chord_type, notes_count)
+                                    )
+                                    break
+                else:
+                    # Use all chord types from selected qualities or all qualities
+                    qualities_to_process = (
+                        chord_qualities
+                        if chord_qualities
+                        else sorted(
+                            set(quality for _, quality, _, _ in CHORD_DEFINITIONS)
+                        )
+                    )
+                    for name, quality, semitones, notes_count in CHORD_DEFINITIONS:
+                        if quality in qualities_to_process:
+                            chord_types_to_process.append((quality, name, notes_count))
 
-                # Create choices for inversion numbers
-                inversion_choices = [
-                    f"{i}st inversion" for i in range(1, max_inversions + 1)
-                ]
+                # Function to get proper ordinal suffix
+                def get_ordinal_suffix(n):
+                    if 10 <= n % 100 <= 20:
+                        suffix = "th"
+                    else:
+                        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+                    return f"{n}{suffix}"
 
-                selected_inversions = questionary.checkbox(
-                    "Select which inversions to generate:",
-                    choices=inversion_choices,
-                    style=custom_style,
-                ).ask()
+                # Group chords by number of possible inversions
+                chords_by_inversions = {}
+                for quality, chord_type, notes_count in chord_types_to_process:
+                    if notes_count >= 3:  # Only process chords that can have inversions
+                        possible_inversions = notes_count - 1
+                        if possible_inversions not in chords_by_inversions:
+                            chords_by_inversions[possible_inversions] = []
+                        chords_by_inversions[possible_inversions].append(
+                            (quality, chord_type)
+                        )
 
-                # Convert from "1st inversion" format to inversion numbers
-                if selected_inversions:
-                    selected_inversions = [
-                        int(inv.split("st")[0]) for inv in selected_inversions
+                # Sort by number of inversions
+                for num_inversions in sorted(chords_by_inversions.keys()):
+                    chords = chords_by_inversions[num_inversions]
+                    inversion_choices = [
+                        get_ordinal_suffix(i) for i in range(1, num_inversions + 1)
                     ]
+
+                    # Create a descriptive header showing which chords these inversions apply to
+                    chord_list = [
+                        f"{chord_type} ({quality})" for quality, chord_type in chords
+                    ]
+                    header = f"Select inversions for {num_inversions}-note chords:"
+                    print_info(f"\nChords in this group: {', '.join(chord_list)}")
+
+                    selected = questionary.checkbox(
+                        header,
+                        choices=inversion_choices,
+                        style=custom_style,
+                    ).ask()
+
+                    if selected:
+                        # Convert from ordinal format to inversion numbers
+                        inversion_numbers = [
+                            int(inv.rstrip("stndrh")) for inv in selected
+                        ]
+                        # Store the selection for all chords with this number of inversions
+                        for quality, chord_type in chords:
+                            selected_inversions[(quality, chord_type)] = (
+                                inversion_numbers
+                            )
             else:  # "No inversions"
                 generate_inversions = False
                 selected_inversions = []
