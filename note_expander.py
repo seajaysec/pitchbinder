@@ -2775,9 +2775,9 @@ def interactive_mode():
                         "keep_artifacts": options_dict["keep_artifacts"],
                         "chord_qualities": chord_qualities,
                         "generate_inversions": generate_inversions,
-                        "overwrite": options_dict[
-                            "overwrite"
-                        ],  # Add overwrite parameter
+                        "selected_chords": selected_chords,
+                        "selected_inversions": selected_inversions,
+                        "overwrite": options_dict["overwrite"],
                     }
                 )
 
