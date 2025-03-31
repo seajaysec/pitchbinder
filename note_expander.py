@@ -2013,7 +2013,11 @@ def generate_full_chord_samples(chord_dir, prefix):
             for chord_name, files in chord_types.items():
                 try:
                     # Sort files by note and octave to ensure consistent order
-                    files.sort(key=lambda x: re.search(r"([A-G]#?\d)\.wav", x).group(1))
+                    def note_sort_key(x):
+                        match = re.search(r"([A-G]#?\d)\.wav", x)
+                        return match.group(1) if match else ""
+
+                    files.sort(key=note_sort_key)
 
                     # Load all audio files for this chord type
                     audio_data = []
@@ -2057,7 +2061,14 @@ def generate_full_chord_samples(chord_dir, prefix):
 
                         # Apply weighted mix
                         for i, audio in enumerate(padded_audio):
-                            combined += audio * weights[i][i]
+                            # Make sure weight is not None before multiplying
+                            weight_value = (
+                                weights[i][i]
+                                if i < len(weights) and weights[i] is not None
+                                else 0.8
+                            )
+                            # Apply the weight
+                            combined += audio * weight_value
 
                         # Normalize the final output
                         if np.max(np.abs(combined)) > 0:
@@ -2074,7 +2085,27 @@ def generate_full_chord_samples(chord_dir, prefix):
                             ]
 
                             # Mix dry/wet
-                            full_chord = combined * 0.7 + reverb * 0.3
+                            if reverb is not None and combined is not None:
+                                # Create numpy arrays filled with zeros if needed
+                                combined_safe = (
+                                    combined
+                                    if combined is not None
+                                    else np.zeros_like(reverb)
+                                )
+                                reverb_safe = (
+                                    reverb
+                                    if reverb is not None
+                                    else np.zeros_like(combined)
+                                )
+                                # Mix with explicit numpy arrays
+                                full_chord = combined_safe * 0.7 + reverb_safe * 0.3
+                            else:
+                                # Fall back to just the combined signal or empty if that's None too
+                                full_chord = (
+                                    combined
+                                    if combined is not None
+                                    else np.zeros(max_length)
+                                )
 
                             # Save the full chord sample
                             output_filename = (
