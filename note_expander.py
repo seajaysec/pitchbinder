@@ -1621,7 +1621,7 @@ def generate_full_sample(all_samples, prefix, source_dir, target_dir):
     if not os.path.exists(exp_dir):
         os.makedirs(exp_dir)
 
-    output_filename = f"{prefix}-00-Full.wav"
+    output_filename = f"{prefix}.wav"
     output_path = os.path.join(exp_dir, output_filename)
 
     # First save the audio data
@@ -1854,7 +1854,6 @@ def process_directory(
     generate_inversions=False,
     selected_chord_types=None,  # New parameter for selected chord types
     selected_inversions=None,  # New parameter for selected inversions
-    overwrite=False,  # Add overwrite parameter
 ):
     """Process a single directory to generate missing samples."""
     # Acquire lock for consistent console output when running in parallel
