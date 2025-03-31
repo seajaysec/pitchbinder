@@ -1019,7 +1019,7 @@ def generate_chords(
         # Generate each chord type with roots from C1 to B8
         for chord_idx, (chord_name, semitones) in enumerate(chords):
             # Create a safe filename from the chord name
-            safe_chord_name = re.sub(r"[^\w\-]", "_", chord_name)
+            safe_chord_name = chord_to_filename(chord_name)
 
             # Update chord progress
             with tqdm_lock:
@@ -2762,21 +2762,20 @@ def interactive_mode():
                 print("Selected inversions:")
                 # Group chords by their selected inversions for cleaner display
                 inv_to_chords = {}
-                for (quality, chord_type), inv_list in selected_inversions.items():
-                    inv_key = tuple(sorted(inv_list))  # Make the list hashable
-                    if inv_key not in inv_to_chords:
-                        inv_to_chords[inv_key] = []
-                    inv_to_chords[inv_key].append(f"{chord_type} ({quality})")
+                if isinstance(selected_inversions, dict):  # Check if it's a dictionary
+                    for (quality, chord_type), inv_list in selected_inversions.items():
+                        inv_key = tuple(sorted(inv_list))  # Make the list hashable
+                        if inv_key not in inv_to_chords:
+                            inv_to_chords[inv_key] = []
+                        inv_to_chords[inv_key].append(f"{quality} {chord_type}")
 
-                # Display grouped inversions
-                for inv_list, chords in inv_to_chords.items():
-                    inv_str = ", ".join(get_ordinal_suffix(i) for i in inv_list)
-                    chord_str = ", ".join(chords)
-                    print(f"  {inv_str} for: {chord_str}")
-            else:
-                print("  No inversions selected")
-        elif generate_inversions:
-            print("  Generating all possible inversions")
+                    # Display grouped inversions
+                    for inv_list, chords in inv_to_chords.items():
+                        inv_str = ", ".join(get_ordinal_suffix(i) for i in inv_list)
+                        chord_str = ", ".join(chords)
+                        print(f"  {inv_str} for: {chord_str}")
+                else:
+                    print(f"  Selected inversions: {selected_inversions}")
     print(f"Play notes: {options_dict['play']}")
     print(f"Overwrite existing: {options_dict['overwrite']}")
     print(f"Keep artifacts: {options_dict['keep_artifacts']}")
