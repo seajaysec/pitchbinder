@@ -4,7 +4,7 @@ A powerful tool for expanding a small set of piano samples into a complete 8-oct
 
 ## Overview
 
-Pitchbinder takes a few samples with note information in their filenames and intelligently generates the missing notes across the full piano range (C1-B8). It uses high-quality pitch shifting and optional time stretching to create natural-sounding samples for all 88 piano keys.
+Pitchbinder takes a few samples with note information in their filenames and intelligently generates the missing notes across the full 8 octave range (C1-B8). It uses high-quality pitch shifting and optional time stretching to create natural-sounding samples for all 88 keys.
 
 ## Features
 
