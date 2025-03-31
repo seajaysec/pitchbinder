@@ -1950,26 +1950,40 @@ def process_directory(
     # Generate chord samples if requested
     chord_dir = None
     full_chord_filenames = []
+
     if chords:
-        update_status(source_dir, "Starting chord generation...", "info")
+        print_info("Chord generation requested. Starting chord generation process...")
         chord_dir = os.path.join(source_dir, "exp_chords")
-        generated_chord_dir, full_chord_filenames = generate_chords(
-            dir_prefix,
-            all_samples,
-            source_dir,
-            chord_dir,
-            target_dir,  # Pass the expansion directory
-            chord_qualities=chord_qualities,
-            generate_inversions=generate_inversions,
-            selected_chord_types=selected_chord_types,  # Pass selected chord types
-            selected_inversions=selected_inversions,  # Pass selected inversions
-        )
+        try:
+            generated_chord_dir, full_chord_filenames = generate_chords(
+                prefix,
+                all_samples,
+                source_dir,
+                chord_dir,
+                target_dir,
+                chord_qualities=chord_qualities,
+                generate_inversions=generate_inversions,
+                selected_chord_types=selected_chord_types,  # Pass selected chord types
+                selected_inversions=selected_inversions,  # Pass selected inversions
+                overwrite=overwrite,
+            )
+            print_info(
+                f"Chord generation complete: {len(full_chord_filenames)} chord types created"
+            )
+        except Exception as e:
+            print_error(f"Error during chord generation: {str(e)}")
+            import traceback
+
+            traceback.print_exc()
+            chord_dir = None
+            full_chord_filenames = []
+
         # Keep the original chord_dir value for the cleanup step
-        update_status(
-            source_dir,
-            f"Chord generation complete: {len(full_chord_filenames)} chord types created",
-            "success",
-        )
+        if generated_chord_dir and generated_chord_dir != chord_dir:
+            chord_dir = generated_chord_dir
+
+    else:
+        print_info("Chord generation not requested. Skipping chord generation.")
 
     # Generate full sample file if requested
     full_sample_filename = None
