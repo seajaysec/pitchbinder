@@ -1007,13 +1007,10 @@ def generate_chords(
                         # Generate inversions for this chord if requested
                         if generate_inversions and inversions:
                             for inv_num, inv_semitones in inversions:
-                                # Skip if this inversion is not in the selected inversions for this chord type
-                                chord_inversions = selected_inversions.get(
-                                    (quality, chord_name), []
-                                )
+                                # Skip if this inversion is not in the selected inversions
                                 if (
                                     selected_inversions is not None
-                                    and inv_num not in chord_inversions
+                                    and inv_num not in selected_inversions
                                 ):
                                     continue
 
@@ -2506,12 +2503,12 @@ def interactive_mode():
     # If chord generation is selected, ask for more details
     chord_qualities = None
     selected_chord_types = None  # New variable to store selected chord types
-    selected_inversions = {}  # Changed to dict to store inversions per chord type
+    selected_inversions = None  # New variable to store selected inversions
     generate_inversions = False
     if options_dict["chords"]:
         chord_mode = questionary.select(
             "How would you like to generate chords?",
-            choices=["Select specific chord qualities", "Generate all chord types"],
+            choices=["Generate all chord types", "Select specific chord qualities"],
             style=custom_style,
         ).ask()
 
@@ -2533,73 +2530,92 @@ def interactive_mode():
                 )
                 options_dict["chords"] = False
 
-        # Show chord type selection for all qualities (or selected qualities)
+        # Ask about specific chord types within selected qualities
         if options_dict["chords"]:
-            selected_chord_types = {}
+            chord_type_mode = questionary.select(
+                "Would you like to select specific chord types within each quality?",
+                choices=[
+                    "Generate all chord types (default)",
+                    "Select specific chord types",
+                ],
+                style=custom_style,
+            ).ask()
 
-            # Filter chord definitions by selected qualities or use all qualities
-            qualities_to_process = (
-                chord_qualities
-                if chord_qualities
-                else sorted(set(quality for _, quality, _, _ in CHORD_DEFINITIONS))
-            )
+            if chord_type_mode == "Select specific chord types":
+                selected_chord_types = {}
 
-            for quality in qualities_to_process:
-                # Extract chord types for this quality
-                chord_types_for_quality = [
-                    (name, semitones, notes_count)
-                    for name, q, semitones, notes_count in CHORD_DEFINITIONS
-                    if q == quality
+                # Filter chord definitions by selected qualities or use all qualities
+                qualities_to_process = (
+                    chord_qualities
+                    if chord_qualities
+                    else sorted(set(quality for _, quality, _, _ in CHORD_DEFINITIONS))
+                )
+
+                for quality in qualities_to_process:
+                    # Extract chord types for this quality
+                    chord_types_for_quality = [
+                        (name, semitones, notes_count)
+                        for name, q, semitones, notes_count in CHORD_DEFINITIONS
+                        if q == quality
+                    ]
+                    chord_type_choices = [
+                        name for name, _, _ in chord_types_for_quality
+                    ]
+
+                    selected_types = questionary.checkbox(
+                        f"Select chord types for {quality} quality:",
+                        choices=chord_type_choices,
+                        style=custom_style,
+                    ).ask()
+
+                    if selected_types:
+                        selected_chord_types[quality] = selected_types
+            else:
+                # Default is to use all chord types
+                selected_chord_types = None
+
+        # Ask about inversions if chord generation is still enabled
+        if options_dict["chords"]:
+            inversion_mode = questionary.select(
+                "How would you like to handle chord inversions?",
+                choices=[
+                    "Generate all inversions (default)",
+                    "Select specific inversions",
+                    "No inversions",
+                ],
+                style=custom_style,
+            ).ask()
+
+            if inversion_mode == "Generate all inversions (default)":
+                generate_inversions = True
+                selected_inversions = None  # All inversions
+            elif inversion_mode == "Select specific inversions":
+                generate_inversions = True
+
+                # Determine the maximum number of inversions possible
+                max_inversions = max(
+                    chord[3] - 1 for chord in CHORD_DEFINITIONS if chord[3] >= 3
+                )
+
+                # Create choices for inversion numbers
+                inversion_choices = [
+                    f"{i}st inversion" for i in range(1, max_inversions + 1)
                 ]
-                chord_type_choices = [name for name, _, _ in chord_types_for_quality]
 
-                selected_types = questionary.checkbox(
-                    f"Select chord types for {quality} quality:",
-                    choices=chord_type_choices,
-                    default=chord_type_choices,  # Default to all selected
+                selected_inversions = questionary.checkbox(
+                    "Select which inversions to generate:",
+                    choices=inversion_choices,
                     style=custom_style,
                 ).ask()
 
-                if selected_types:
-                    selected_chord_types[quality] = selected_types
-
-                    # For each selected chord type, ask about inversions if it has 3 or more notes
-                    for chord_name, semitones, notes_count in chord_types_for_quality:
-                        if chord_name in selected_types and notes_count >= 3:
-                            # Calculate possible inversions for this chord type
-                            possible_inversions = notes_count - 1
-
-                            # Create properly formatted inversion choices
-                            inversion_choices = []
-                            for i in range(1, possible_inversions + 1):
-                                suffix = (
-                                    "st"
-                                    if i == 1
-                                    else "nd" if i == 2 else "rd" if i == 3 else "th"
-                                )
-                                inversion_choices.append(f"{i}{suffix} inversion")
-
-                            if inversion_choices:
-                                selected_invs = questionary.checkbox(
-                                    f"Select inversions for {chord_name}:",
-                                    choices=inversion_choices,
-                                    default=inversion_choices,  # Default to all selected
-                                    style=custom_style,
-                                ).ask()
-
-                                # Store selected inversions for this chord type
-                                if selected_invs:
-                                    # Convert from "1st inversion" format to numbers
-                                    inv_numbers = []
-                                    for inv in selected_invs:
-                                        num = int(
-                                            "".join(c for c in inv if c.isdigit())
-                                        )
-                                        inv_numbers.append(num)
-                                    selected_inversions[(quality, chord_name)] = (
-                                        inv_numbers
-                                    )
-                                    generate_inversions = True
+                # Convert from "1st inversion" format to inversion numbers
+                if selected_inversions:
+                    selected_inversions = [
+                        int(inv.split("st")[0]) for inv in selected_inversions
+                    ]
+            else:  # "No inversions"
+                generate_inversions = False
+                selected_inversions = []
 
     # Confirm settings
     print_info("\nYour selected settings:")
@@ -2620,17 +2636,22 @@ def interactive_mode():
             print("Generating all chord qualities")
 
         if selected_chord_types:
-            print("Selected chord types and their inversions:")
+            print("Selected specific chord types:")
             for quality, types in selected_chord_types.items():
-                print(f"  {quality}:")
-                for chord_type in types:
-                    inversions = selected_inversions.get((quality, chord_type), [])
-                    if inversions:
-                        print(
-                            f"    {chord_type}: {', '.join(str(i) for i in inversions)} inversions"
-                        )
-                    else:
-                        print(f"    {chord_type}: no inversions")
+                print(f"  {quality}: {', '.join(types)}")
+        else:
+            print("Generating all chord types within selected qualities")
+
+        print(f"Generate inversions: {generate_inversions}")
+        if generate_inversions and selected_inversions is not None:
+            if selected_inversions:
+                print(
+                    f"Selected inversions: {', '.join(str(i) for i in selected_inversions)}"
+                )
+            else:
+                print("No inversions selected")
+        elif generate_inversions:
+            print("Generating all possible inversions")
     print(f"Play notes: {options_dict['play']}")
     print(f"Overwrite existing: {options_dict['overwrite']}")
     print(f"Keep artifacts: {options_dict['keep_artifacts']}")
