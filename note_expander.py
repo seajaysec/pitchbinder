@@ -972,10 +972,14 @@ def generate_chords(
                 os.makedirs(quality_dir)
 
             # Create inversions directory if needed
-            if generate_inversions:
-                inversions_dir = os.path.join(quality_dir, "inversions")
-                if not os.path.exists(inversions_dir):
-                    os.makedirs(inversions_dir)
+            # Always create inversions directory for consistent structure,
+            # even if no inversions are requested for this quality
+            inversions_dir = os.path.join(quality_dir, "inversions")
+            if not os.path.exists(inversions_dir):
+                os.makedirs(inversions_dir)
+                tqdm.write(
+                    f"{INFO}Created inversions directory: {inversions_dir}{RESET}"
+                )
 
             # Update the current task message
             tqdm.write(
