@@ -1059,7 +1059,7 @@ def generate_chords(
 
                     if chord_audio is not None:
                         # Save the chord
-                        chord_filename = f"{prefix}-{safe_chord_name}.wav"
+                        chord_filename = f"{prefix}-{chord_to_filename(chord_name)}.wav"
                         chord_path = os.path.join(quality_dir, chord_filename)
                         sf.write(chord_path, chord_audio, sr)
                         tqdm.write(f"{SUCCESS}    Generated {chord_filename}{RESET}")
@@ -1112,9 +1112,7 @@ def generate_chords(
                                         raise ValueError("Inversion generation failed")
 
                                     # Save the inverted chord with inversion number in filename
-                                    inv_chord_filename = (
-                                        f"{prefix}-{safe_chord_name}-{inv_num}stInv.wav"
-                                    )
+                                    inv_chord_filename = f"{prefix}-{chord_to_filename(chord_name, inv_num)}.wav"
                                     inv_chord_path = os.path.join(
                                         inversions_dir, inv_chord_filename
                                     )
@@ -1129,9 +1127,7 @@ def generate_chords(
                                     )
 
                                     # Save the inverted chord with inversion number in filename using the original chord audio as fallback
-                                    inv_chord_filename = (
-                                        f"{prefix}-{safe_chord_name}-{inv_num}stInv.wav"
-                                    )
+                                    inv_chord_filename = f"{prefix}-{chord_to_filename(chord_name, inv_num)}.wav"
                                     inv_chord_path = os.path.join(
                                         inversions_dir, inv_chord_filename
                                     )
@@ -1247,7 +1243,9 @@ def generate_chords(
                                 new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
 
                             # Save the pitch-shifted chord
-                            chord_filename = f"{prefix}-{safe_chord_name}.wav"
+                            chord_filename = (
+                                f"{prefix}-{chord_to_filename(chord_name)}.wav"
+                            )
                             chord_path = os.path.join(quality_dir, chord_filename)
                             sf.write(chord_path, new_audio, sr)
 
@@ -1261,9 +1259,7 @@ def generate_chords(
                                 for inv_num, inv_semitones in inversions:
                                     # For pitch-shifted chords, we need to use the same approach
                                     # Instead of generating from scratch, pitch-shift the chord we just created
-                                    inv_chord_filename = (
-                                        f"{prefix}-{safe_chord_name}-{inv_num}stInv.wav"
-                                    )
+                                    inv_chord_filename = f"{prefix}-{chord_to_filename(chord_name, inv_num)}.wav"
                                     inv_chord_path = os.path.join(
                                         inversions_dir, inv_chord_filename
                                     )
