@@ -892,7 +892,7 @@ def generate_chords(
                 f"Filtered to {len(chord_defs)} chord types in qualities: {', '.join(chord_qualities)}"
             )
 
-        # Further filter by specific chord names if provided
+        # Further filter by specific chord names if provided (do this early to reduce overhead)
         if selected_chords:
             chord_defs = [chord for chord in chord_defs if chord[0] in selected_chords]
             print_info(f"Filtered to {len(chord_defs)} specific chord types")
@@ -931,7 +931,9 @@ def generate_chords(
         total_chords = 0
         chord_tasks = []
 
-        # Prepare generation tasks for all chords
+        # Prepare generation tasks for all chords - but be smarter about it
+        # First determine the actual chords and inversions to process
+        actual_chords_to_process = []
         for quality, chords in chord_by_quality.items():
             for chord_name, semitones in chords:
                 quality_dir = os.path.join(chord_dir, quality)
@@ -944,7 +946,7 @@ def generate_chords(
                 # Clean up chord name for filenames
                 safe_chord_name = re.sub(r"[^a-zA-Z0-9]", "", chord_name)
 
-                # Get inversions if needed
+                # Get inversions if needed (only calculate if we'll actually use them)
                 inversions = []
                 if generate_inversions:
                     inversions = generate_chord_inversions(semitones)
@@ -955,41 +957,62 @@ def generate_chords(
                             inv for inv in inversions if inv[0] in selected_inv_numbers
                         ]
 
-                # Create tasks for core octaves (C2-B4)
-                for octave in range(2, 5):  # Octaves 2, 3, 4
-                    for note in notes:
-                        # Skip if the highest note in the chord would be above B8
-                        highest_semitone = max(semitones)
-                        highest_note, highest_octave = get_note_from_semitone(
-                            note, octave, highest_semitone
-                        )
-                        if highest_octave > 8:
-                            continue
+                actual_chords_to_process.append(
+                    {
+                        "quality": quality,
+                        "quality_dir": quality_dir,
+                        "chord_name": chord_name,
+                        "safe_chord_name": safe_chord_name,
+                        "semitones": semitones,
+                        "generate_inversions": generate_inversions
+                        and len(inversions) > 0,
+                        "inversions": inversions,
+                        "inversions_dir": inversions_dir,
+                    }
+                )
 
-                        # Add to task list
-                        task = {
-                            "type": "chord",
-                            "note": note,
-                            "octave": octave,
-                            "semitones": semitones,
-                            "quality": quality,
-                            "quality_dir": quality_dir,
-                            "chord_name": chord_name,
-                            "safe_chord_name": safe_chord_name,
-                            "generate_inversions": generate_inversions,
-                            "inversions": inversions,
-                            "inversions_dir": inversions_dir,
-                            "prefix": prefix,
-                            "source_dir": source_dir,
-                            "target_dir": target_dir,
-                            "all_samples": all_samples,
-                        }
-                        chord_tasks.append(task)
-                        total_chords += 1
+        # Get optimal worker count
+        num_workers = get_optimal_workers()
+        print_info(f"Using {num_workers} workers for chord generation")
 
-                        # Count inversions
-                        if generate_inversions and inversions:
-                            total_chords += len(inversions)
+        # Create tasks for batch processing - prioritize better octave distribution
+        # First create core octave tasks (C2-B4) as these are most important
+        for octave in range(2, 5):  # Octaves 2, 3, 4
+            for note in notes:
+                for chord_info in actual_chords_to_process:
+                    semitones = chord_info["semitones"]
+                    # Skip if the highest note in the chord would be above B8
+                    highest_semitone = max(semitones)
+                    highest_note, highest_octave = get_note_from_semitone(
+                        note, octave, highest_semitone
+                    )
+                    if highest_octave > 8:
+                        continue
+
+                    # Add chord task
+                    task = {
+                        "type": "chord",
+                        "note": note,
+                        "octave": octave,
+                        "semitones": semitones,
+                        "quality": chord_info["quality"],
+                        "quality_dir": chord_info["quality_dir"],
+                        "chord_name": chord_info["chord_name"],
+                        "safe_chord_name": chord_info["safe_chord_name"],
+                        "generate_inversions": chord_info["generate_inversions"],
+                        "inversions": chord_info["inversions"],
+                        "inversions_dir": chord_info["inversions_dir"],
+                        "prefix": prefix,
+                        "source_dir": source_dir,
+                        "target_dir": target_dir,
+                        "all_samples": all_samples,
+                    }
+                    chord_tasks.append(task)
+                    total_chords += 1
+
+                    # Count inversions
+                    if chord_info["generate_inversions"] and chord_info["inversions"]:
+                        total_chords += len(chord_info["inversions"])
 
         # Set up progress tracking
         position = 1
@@ -1000,11 +1023,6 @@ def generate_chords(
             leave=True,
             bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.BLUE, RESET),
         )
-
-        # Create a ThreadPoolExecutor for parallel processing
-        # Use optimal number of workers based on system resources
-        num_workers = get_optimal_workers()
-        print_info(f"Using {num_workers} workers for chord generation")
 
         # Dictionary to store chord audio for pitch shifting
         core_chords = {}
@@ -1028,7 +1046,7 @@ def generate_chords(
         inversion_count = 0
         progress_lock = threading.Lock()
 
-        # Progress update function
+        # Progress update function - reduce update frequency to every 100 items
         def update_progress(is_chord=True, is_inversion=False, count=1):
             nonlocal chord_count, inversion_count
             with progress_lock:
@@ -1037,13 +1055,30 @@ def generate_chords(
                 if is_inversion:
                     inversion_count += count
 
-                # Update status message periodically (every 50 items)
-                if (chord_count + inversion_count) % 50 == 0:
+                # Update status message periodically (less frequently to reduce overhead)
+                if (chord_count + inversion_count) % 100 == 0:
                     update_status(
                         source_dir,
                         f"Chord generation in progress - Generated {chord_count} chords and {inversion_count} inversions so far",
                         "info",
                     )
+
+        # Optimized batch processing function
+        def process_batch(batch):
+            results = []
+            pitch_shift_results = {}
+
+            for task in batch:
+                if task["type"] == "chord":
+                    result, inv_results, path = process_chord_task(task)
+                    if result:
+                        results.append((result, inv_results, path))
+                elif task["type"] == "pitch_shift":
+                    result, inv_results, path = pitch_shift_chord_task(task)
+                    if result:
+                        results.append((result, inv_results, path))
+
+            return results
 
         # Function to process chord task in parallel
         def process_chord_task(task):
@@ -1307,47 +1342,56 @@ def generate_chords(
                     )
                 return None, None, None
 
-        # Process core octave chords in parallel
+        # Process tasks in optimized batches
+        # Each batch will have a mix of chord tasks to ensure better distribution of work
+        batch_size = max(5, min(20, len(chord_tasks) // (num_workers * 2)))
+        if batch_size < 1:
+            batch_size = 1
+
+        batches = [
+            chord_tasks[i : i + batch_size]
+            for i in range(0, len(chord_tasks), batch_size)
+        ]
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-            # Submit all chord generation tasks
-            future_to_task = {
-                executor.submit(process_chord_task, task): task for task in chord_tasks
+            # Submit batches instead of individual tasks
+            future_to_batch = {
+                executor.submit(process_batch, batch): batch for batch in batches
             }
 
             # Process results as they complete
-            for future in concurrent.futures.as_completed(future_to_task):
-                task = future_to_task[future]
+            for future in concurrent.futures.as_completed(future_to_batch):
+                batch = future_to_batch[future]
 
                 try:
-                    result, inversion_results, chord_path = future.result()
+                    batch_results = future.result()
 
-                    # Update progress bar
-                    if result:
+                    for result, inversion_results, chord_path in batch_results:
+                        # Update progress bar
                         pbar.update(1)
 
                         # Store core chord for pitch shifting
-                        core_chords[(result["note"], result["octave"])] = (
-                            chord_path,
-                            result["chord_audio"],
-                            result["sr"],
-                        )
+                        if result["type"] == "chord":
+                            core_chords[(result["note"], result["octave"])] = (
+                                chord_path,
+                                result["chord_audio"],
+                                result["sr"],
+                            )
 
                         # Add to full chord filenames
                         full_chord_filenames.append(
                             (result["quality"], result["chord_name"], chord_path)
                         )
 
-                    # Update for inversions
-                    if inversion_results:
-                        pbar.update(len(inversion_results))
+                        # Update for inversions
+                        if inversion_results:
+                            pbar.update(len(inversion_results))
+
                 except Exception as e:
                     with tqdm_lock:
-                        tqdm.write(
-                            f"{ERROR}Error processing chord task: {str(e)}{RESET}"
-                        )
-                    pbar.update(1)  # Update even on error
-                    if task["generate_inversions"] and task["inversions"]:
-                        pbar.update(len(task["inversions"]))
+                        tqdm.write(f"{ERROR}Error processing batch: {str(e)}{RESET}")
+                    # Update even on error - estimate based on batch size
+                    pbar.update(len(batch) * 1.5)  # Rough estimate including inversions
 
         # Update status before starting pitch-shifted chord generation
         update_status(
@@ -1359,104 +1403,99 @@ def generate_chords(
         # Now create tasks for extended octave chords (C1-B1 and C5-B8)
         pitch_shift_tasks = []
 
-        for quality, chords in chord_by_quality.items():
-            for chord_name, semitones in chords:
-                quality_dir = os.path.join(chord_dir, quality)
-                inversions_dir = (
-                    os.path.join(quality_dir, "inversions")
-                    if generate_inversions
-                    else None
-                )
+        # Create batches of pitch-shift tasks for optimal distribution
+        for octave in range(1, 9):
+            # Skip the core octaves we've already generated
+            if 2 <= octave <= 4:
+                continue
 
-                # Clean up chord name for filenames
-                safe_chord_name = re.sub(r"[^a-zA-Z0-9]", "", chord_name)
-
-                # Get inversions if needed
-                inversions = []
-                if generate_inversions:
-                    inversions = generate_chord_inversions(semitones)
-                    # Filter inversions if specific ones were selected
-                    if selected_inversions and chord_name in selected_inversions:
-                        selected_inv_numbers = selected_inversions[chord_name]
-                        inversions = [
-                            inv for inv in inversions if inv[0] in selected_inv_numbers
-                        ]
-
-                # Generate extended range (C1-B1 and C5-B8)
-                for octave in range(1, 9):
-                    # Skip the core octaves we've already generated
-                    if 2 <= octave <= 4:
+            for note in notes:
+                for chord_info in actual_chords_to_process:
+                    semitones = chord_info["semitones"]
+                    # Skip if the highest note in the chord would be above B8
+                    highest_semitone = max(semitones)
+                    highest_note, highest_octave = get_note_from_semitone(
+                        note, octave, highest_semitone
+                    )
+                    if highest_octave > 8:
                         continue
 
-                    for note in notes:
-                        # Skip if the highest note in the chord would be above B8
-                        highest_semitone = max(semitones)
-                        highest_note, highest_octave = get_note_from_semitone(
-                            note, octave, highest_semitone
-                        )
-                        if highest_octave > 8:
-                            continue
+                    # Find the closest core chord to use as source
+                    closest_core = None
+                    min_distance = float("inf")
 
-                        # Find the closest core chord to use as source
-                        closest_core = None
-                        min_distance = float("inf")
+                    for core_note, core_octave in core_chords.keys():
+                        # Calculate semitone distance
+                        core_index = notes.index(core_note) + (core_octave * 12)
+                        target_index = notes.index(note) + (octave * 12)
+                        distance = abs(target_index - core_index)
 
-                        for core_note, core_octave in core_chords.keys():
-                            # Calculate semitone distance
-                            core_index = notes.index(core_note) + (core_octave * 12)
-                            target_index = notes.index(note) + (octave * 12)
-                            distance = abs(target_index - core_index)
+                        if distance < min_distance:
+                            min_distance = distance
+                            closest_core = (core_note, core_octave)
 
-                            if distance < min_distance:
-                                min_distance = distance
-                                closest_core = (core_note, core_octave)
+                    if closest_core:
+                        source_note, source_octave = closest_core
+                        chord_path, chord_audio, sr = core_chords[closest_core]
 
-                        if closest_core:
-                            source_note, source_octave = closest_core
-                            chord_path, chord_audio, sr = core_chords[closest_core]
+                        task = {
+                            "type": "pitch_shift",
+                            "note": note,
+                            "octave": octave,
+                            "semitones": semitones,
+                            "quality": chord_info["quality"],
+                            "quality_dir": chord_info["quality_dir"],
+                            "chord_name": chord_info["chord_name"],
+                            "safe_chord_name": chord_info["safe_chord_name"],
+                            "generate_inversions": chord_info["generate_inversions"],
+                            "inversions": chord_info["inversions"],
+                            "inversions_dir": chord_info["inversions_dir"],
+                            "prefix": prefix,
+                            "source_note": source_note,
+                            "source_octave": source_octave,
+                            "source_audio": chord_audio,
+                            "sr": sr,
+                        }
+                        pitch_shift_tasks.append(task)
+                        total_chords += 1
 
-                            task = {
-                                "type": "pitch_shift",
-                                "note": note,
-                                "octave": octave,
-                                "semitones": semitones,
-                                "quality": quality,
-                                "quality_dir": quality_dir,
-                                "chord_name": chord_name,
-                                "safe_chord_name": safe_chord_name,
-                                "generate_inversions": generate_inversions,
-                                "inversions": inversions,
-                                "inversions_dir": inversions_dir,
-                                "prefix": prefix,
-                                "source_note": source_note,
-                                "source_octave": source_octave,
-                                "source_audio": chord_audio,
-                                "sr": sr,
-                            }
-                            pitch_shift_tasks.append(task)
-                            total_chords += 1
+                        # Count inversions
+                        if (
+                            chord_info["generate_inversions"]
+                            and chord_info["inversions"]
+                        ):
+                            total_chords += len(chord_info["inversions"])
 
-                            # Count inversions
-                            if generate_inversions and inversions:
-                                total_chords += len(inversions)
+        # Create batches for pitch-shift tasks
+        # Normally we would use larger batches for pitch-shift tasks since they're faster than generation
+        pitch_shift_batch_size = max(
+            10, min(40, len(pitch_shift_tasks) // (num_workers * 2))
+        )
+        if pitch_shift_batch_size < 1 and pitch_shift_tasks:
+            pitch_shift_batch_size = 1
 
-        # Process pitch-shifted chords in parallel
+        pitch_shift_batches = [
+            pitch_shift_tasks[i : i + pitch_shift_batch_size]
+            for i in range(0, len(pitch_shift_tasks), pitch_shift_batch_size)
+        ]
+
+        # Process pitch-shifted chords in batches for better efficiency
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-            # Submit all pitch shift tasks
-            future_to_task = {
-                executor.submit(pitch_shift_chord_task, task): task
-                for task in pitch_shift_tasks
+            # Submit batches of pitch-shift tasks
+            future_to_batch = {
+                executor.submit(process_batch, batch): batch
+                for batch in pitch_shift_batches
             }
 
             # Process results as they complete
-            for future in concurrent.futures.as_completed(future_to_task):
-                task = future_to_task[future]
+            for future in concurrent.futures.as_completed(future_to_batch):
+                batch = future_to_batch[future]
 
                 try:
-                    result, inversion_results, chord_path = future.result()
+                    batch_results = future.result()
 
-                    # Update progress bar
-                    if result:
+                    for result, inversion_results, chord_path in batch_results:
+                        # Update progress bar
                         pbar.update(1)
 
                         # Add to full chord filenames
@@ -1464,17 +1503,17 @@ def generate_chords(
                             (result["quality"], result["chord_name"], chord_path)
                         )
 
-                    # Update for inversions
-                    if inversion_results:
-                        pbar.update(len(inversion_results))
+                        # Update for inversions
+                        if inversion_results:
+                            pbar.update(len(inversion_results))
+
                 except Exception as e:
                     with tqdm_lock:
                         tqdm.write(
-                            f"{ERROR}Error processing pitch shift task: {str(e)}{RESET}"
+                            f"{ERROR}Error processing pitch shift batch: {str(e)}{RESET}"
                         )
-                    pbar.update(1)  # Update even on error
-                    if task["generate_inversions"] and task["inversions"]:
-                        pbar.update(len(task["inversions"]))
+                    # Update even on error - estimate based on batch size
+                    pbar.update(len(batch) * 1.5)  # Rough estimate including inversions
 
         # Close main progress bar
         pbar.close()
