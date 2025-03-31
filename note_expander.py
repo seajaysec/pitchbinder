@@ -827,6 +827,8 @@ def generate_chords(
     target_dir,
     chord_qualities=None,
     generate_inversions=False,
+    selected_chord_types=None,  # New parameter for selected chord types
+    selected_inversions=None,  # New parameter for selected inversions
 ):
     """Generate chord samples based on the provided chord definitions."""
     notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -843,9 +845,27 @@ def generate_chords(
                 f"Filtered to {len(chord_defs)} chord types in qualities: {', '.join(chord_qualities)}"
             )
 
+        # Further filter by selected chord types if specified
+        if selected_chord_types:
+            filtered_defs = []
+            for chord_name, quality, semitones, notes_count in chord_defs:
+                if (
+                    quality in selected_chord_types
+                    and chord_name in selected_chord_types[quality]
+                ):
+                    filtered_defs.append((chord_name, quality, semitones, notes_count))
+
+            chord_defs = filtered_defs
+            print_info(f"Further filtered to {len(chord_defs)} specific chord types")
+
         print_header(f"Generating {len(chord_defs)} chord types")
         if generate_inversions:
-            print_info("Inversions will be generated for all applicable chords")
+            if selected_inversions is not None:
+                print_info(
+                    f"Generating {len(selected_inversions)} selected inversions: {', '.join(str(i) for i in selected_inversions)}"
+                )
+            else:
+                print_info("Inversions will be generated for all applicable chords")
 
         # Create the main chord directory if it doesn't exist
         if not os.path.exists(chord_dir):
@@ -987,6 +1007,13 @@ def generate_chords(
                         # Generate inversions for this chord if requested
                         if generate_inversions and inversions:
                             for inv_num, inv_semitones in inversions:
+                                # Skip if this inversion is not in the selected inversions
+                                if (
+                                    selected_inversions is not None
+                                    and inv_num not in selected_inversions
+                                ):
+                                    continue
+
                                 try:
                                     # Compute the new root for the inversion based on the original semitones.
                                     # The inversion index inv_num indicates which note becomes the new root.
@@ -1754,7 +1781,9 @@ def process_directory(
     keep_artifacts=False,
     chord_qualities=None,
     generate_inversions=False,
-    overwrite=False,  # added parameter
+    selected_chord_types=None,  # New parameter for selected chord types
+    selected_inversions=None,  # New parameter for selected inversions
+    overwrite=False,
 ):
     """Process a single directory to generate missing samples."""
     # Acquire lock for consistent console output when running in parallel
@@ -1841,7 +1870,7 @@ def process_directory(
     if chords:
         update_status(source_dir, "Starting chord generation...", "info")
         chord_dir = os.path.join(source_dir, "exp_chords")
-        chord_dir, full_chord_filenames = generate_chords(
+        generated_chord_dir, full_chord_filenames = generate_chords(
             dir_prefix,
             all_samples,
             source_dir,
@@ -1849,7 +1878,10 @@ def process_directory(
             target_dir,  # Pass the expansion directory
             chord_qualities=chord_qualities,
             generate_inversions=generate_inversions,
+            selected_chord_types=selected_chord_types,  # Pass selected chord types
+            selected_inversions=selected_inversions,  # Pass selected inversions
         )
+        # Keep the original chord_dir value for the cleanup step
         update_status(
             source_dir,
             f"Chord generation complete: {len(full_chord_filenames)} chord types created",
@@ -2470,6 +2502,8 @@ def interactive_mode():
 
     # If chord generation is selected, ask for more details
     chord_qualities = None
+    selected_chord_types = None  # New variable to store selected chord types
+    selected_inversions = None  # New variable to store selected inversions
     generate_inversions = False
     if options_dict["chords"]:
         chord_mode = questionary.select(
@@ -2496,13 +2530,92 @@ def interactive_mode():
                 )
                 options_dict["chords"] = False
 
-        # Ask about inversions if chord generation is still enabled
+        # Ask about specific chord types within selected qualities
         if options_dict["chords"]:
-            generate_inversions = questionary.confirm(
-                "Generate chord inversions? (This will create all possible inversions for each chord)",
-                default=False,
+            chord_type_mode = questionary.select(
+                "Would you like to select specific chord types within each quality?",
+                choices=[
+                    "Generate all chord types (default)",
+                    "Select specific chord types",
+                ],
                 style=custom_style,
             ).ask()
+
+            if chord_type_mode == "Select specific chord types":
+                selected_chord_types = {}
+
+                # Filter chord definitions by selected qualities or use all qualities
+                qualities_to_process = (
+                    chord_qualities
+                    if chord_qualities
+                    else sorted(set(quality for _, quality, _, _ in CHORD_DEFINITIONS))
+                )
+
+                for quality in qualities_to_process:
+                    # Extract chord types for this quality
+                    chord_types_for_quality = [
+                        (name, semitones, notes_count)
+                        for name, q, semitones, notes_count in CHORD_DEFINITIONS
+                        if q == quality
+                    ]
+                    chord_type_choices = [
+                        name for name, _, _ in chord_types_for_quality
+                    ]
+
+                    selected_types = questionary.checkbox(
+                        f"Select chord types for {quality} quality:",
+                        choices=chord_type_choices,
+                        style=custom_style,
+                    ).ask()
+
+                    if selected_types:
+                        selected_chord_types[quality] = selected_types
+            else:
+                # Default is to use all chord types
+                selected_chord_types = None
+
+        # Ask about inversions if chord generation is still enabled
+        if options_dict["chords"]:
+            inversion_mode = questionary.select(
+                "How would you like to handle chord inversions?",
+                choices=[
+                    "Generate all inversions (default)",
+                    "Select specific inversions",
+                    "No inversions",
+                ],
+                style=custom_style,
+            ).ask()
+
+            if inversion_mode == "Generate all inversions (default)":
+                generate_inversions = True
+                selected_inversions = None  # All inversions
+            elif inversion_mode == "Select specific inversions":
+                generate_inversions = True
+
+                # Determine the maximum number of inversions possible
+                max_inversions = max(
+                    chord[3] - 1 for chord in CHORD_DEFINITIONS if chord[3] >= 3
+                )
+
+                # Create choices for inversion numbers
+                inversion_choices = [
+                    f"{i}st inversion" for i in range(1, max_inversions + 1)
+                ]
+
+                selected_inversions = questionary.checkbox(
+                    "Select which inversions to generate:",
+                    choices=inversion_choices,
+                    style=custom_style,
+                ).ask()
+
+                # Convert from "1st inversion" format to inversion numbers
+                if selected_inversions:
+                    selected_inversions = [
+                        int(inv.split("st")[0]) for inv in selected_inversions
+                    ]
+            else:  # "No inversions"
+                generate_inversions = False
+                selected_inversions = []
 
     # Confirm settings
     print_info("\nYour selected settings:")
@@ -2520,8 +2633,25 @@ def interactive_mode():
         if chord_qualities:
             print(f"Chord qualities: {', '.join(chord_qualities)}")
         else:
-            print("Generating all chord types")
+            print("Generating all chord qualities")
+
+        if selected_chord_types:
+            print("Selected specific chord types:")
+            for quality, types in selected_chord_types.items():
+                print(f"  {quality}: {', '.join(types)}")
+        else:
+            print("Generating all chord types within selected qualities")
+
         print(f"Generate inversions: {generate_inversions}")
+        if generate_inversions and selected_inversions is not None:
+            if selected_inversions:
+                print(
+                    f"Selected inversions: {', '.join(str(i) for i in selected_inversions)}"
+                )
+            else:
+                print("No inversions selected")
+        elif generate_inversions:
+            print("Generating all possible inversions")
     print(f"Play notes: {options_dict['play']}")
     print(f"Overwrite existing: {options_dict['overwrite']}")
     print(f"Keep artifacts: {options_dict['keep_artifacts']}")
@@ -2592,9 +2722,9 @@ def interactive_mode():
                         "keep_artifacts": options_dict["keep_artifacts"],
                         "chord_qualities": chord_qualities,
                         "generate_inversions": generate_inversions,
-                        "overwrite": options_dict[
-                            "overwrite"
-                        ],  # Add overwrite parameter
+                        "selected_chord_types": selected_chord_types,  # Add new parameter
+                        "selected_inversions": selected_inversions,  # Add new parameter
+                        "overwrite": options_dict["overwrite"],
                     }
                 )
 
@@ -2697,7 +2827,9 @@ def interactive_mode():
                     keep_artifacts=options_dict["keep_artifacts"],
                     chord_qualities=chord_qualities,
                     generate_inversions=generate_inversions,
-                    overwrite=options_dict["overwrite"],  # Add overwrite parameter
+                    selected_chord_types=selected_chord_types,  # Add new parameter
+                    selected_inversions=selected_inversions,  # Add new parameter
+                    overwrite=options_dict["overwrite"],
                 )
     else:
         # Process just the single directory (no parallelization needed)
@@ -2722,7 +2854,9 @@ def interactive_mode():
             keep_artifacts=options_dict["keep_artifacts"],
             chord_qualities=chord_qualities,
             generate_inversions=generate_inversions,
-            overwrite=options_dict["overwrite"],  # Add overwrite parameter
+            selected_chord_types=selected_chord_types,  # Add new parameter
+            selected_inversions=selected_inversions,  # Add new parameter
+            overwrite=options_dict["overwrite"],
         )
 
     print_success("Processing complete!")
@@ -2736,10 +2870,27 @@ def process_directory_wrapper(**kwargs):
         update_status(source_dir, "Started processing", "info")
 
         # Process the directory
-        result = process_directory(**kwargs)
+        result = process_directory(
+            source_dir=kwargs.get("source_dir", "."),
+            target_dir=kwargs.get("target_dir", "./expansion"),
+            prefix=kwargs.get("prefix"),
+            play=kwargs.get("play", False),
+            gen_full=kwargs.get("gen_full", False),
+            time_match=kwargs.get("time_match", False),
+            chords=kwargs.get("chords", False),
+            keep_artifacts=kwargs.get("keep_artifacts", False),
+            chord_qualities=kwargs.get("chord_qualities"),
+            generate_inversions=kwargs.get("generate_inversions", False),
+            selected_chord_types=kwargs.get(
+                "selected_chord_types"
+            ),  # Add new parameter
+            selected_inversions=kwargs.get("selected_inversions"),  # Add new parameter
+            overwrite=kwargs.get("overwrite", False),
+        )
 
         # Log successful completion
         update_status(source_dir, "Processing completed successfully", "success")
+
         return result
     except Exception as e:
         # Log error
