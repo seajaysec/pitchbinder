@@ -1739,7 +1739,7 @@ def cleanup_artifacts(
             # Handle different formats of chord_item
             if isinstance(chord_item, tuple):
                 if len(chord_item) == 3:
-                    # Format: (quality, "inversions", filename)
+                    # Format: (quality, "inv", filename)
                     quality, subdir, chord_filename = chord_item
                     # Find the chord file in the chord directory structure
                     chord_path = os.path.join(
