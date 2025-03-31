@@ -1012,6 +1012,39 @@ def generate_chords(
         # To store filenames of chords for full sample generation later
         full_chord_filenames = []
 
+        # Before starting parallel processing
+        with tqdm_lock:
+            total_chord_types = sum(
+                len(chords) for _, chords in chord_by_quality.items()
+            )
+            update_status(
+                source_dir,
+                f"Generating {total_chord_types} chord types with {num_workers} parallel workers",
+                "info",
+            )
+
+        # Track progress at a directory level
+        chord_count = 0
+        inversion_count = 0
+        progress_lock = threading.Lock()
+
+        # Progress update function
+        def update_progress(is_chord=True, is_inversion=False, count=1):
+            nonlocal chord_count, inversion_count
+            with progress_lock:
+                if is_chord:
+                    chord_count += count
+                if is_inversion:
+                    inversion_count += count
+
+                # Update status message periodically (every 50 items)
+                if (chord_count + inversion_count) % 50 == 0:
+                    update_status(
+                        source_dir,
+                        f"Chord generation in progress - Generated {chord_count} chords and {inversion_count} inversions so far",
+                        "info",
+                    )
+
         # Function to process chord task in parallel
         def process_chord_task(task):
             try:
@@ -1054,6 +1087,9 @@ def generate_chords(
                 chord_filename = f"{prefix}-{safe_chord_name}-{note}{octave}.wav"
                 chord_path = os.path.join(quality_dir, chord_filename)
                 sf.write(chord_path, chord_audio, sr)
+
+                # Update progress counter
+                update_progress(is_chord=True)
 
                 # Store the result
                 result = {
@@ -1104,6 +1140,9 @@ def generate_chords(
                             )
                             sf.write(inv_chord_path, inv_chord_audio, inv_sr)
 
+                            # Update progress counter
+                            update_progress(is_chord=False, is_inversion=True)
+
                             with tqdm_lock:
                                 tqdm.write(
                                     f"{SUCCESS}    Generated {inv_chord_filename}{RESET}"
@@ -1129,6 +1168,9 @@ def generate_chords(
                                 inversions_dir, inv_chord_filename
                             )
                             sf.write(inv_chord_path, chord_audio, sr)
+
+                            # Update progress counter
+                            update_progress(is_chord=False, is_inversion=True)
 
                             with tqdm_lock:
                                 tqdm.write(
@@ -1209,6 +1251,9 @@ def generate_chords(
                     chord_path = os.path.join(quality_dir, chord_filename)
                     sf.write(chord_path, new_audio, sr)
 
+                    # Update progress counter
+                    update_progress(is_chord=True)
+
                     with tqdm_lock:
                         tqdm.write(
                             f"{SUCCESS}    Generated {chord_filename} (pitch-shifted){RESET}"
@@ -1235,6 +1280,9 @@ def generate_chords(
 
                             # Simply save the same audio with a different name
                             sf.write(inv_chord_path, new_audio, sr)
+
+                            # Update progress counter
+                            update_progress(is_chord=False, is_inversion=True)
 
                             with tqdm_lock:
                                 tqdm.write(
