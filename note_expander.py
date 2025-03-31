@@ -2581,140 +2581,121 @@ def interactive_mode():
     selected_chord_types = None
     inversion_settings = {}  # Store inversion preferences per chord type
     if options_dict["chords"]:
-        chord_mode = questionary.select(
-            "How would you like to generate chords?",
-            choices=[
-                "Generate all chord types",
-                "Select specific chord qualities and types",
-            ],
+        # Extract unique chord qualities from CHORD_DEFINITIONS
+        unique_qualities = sorted(
+            set(quality for _, quality, _, _ in CHORD_DEFINITIONS)
+        )
+
+        # Show all qualities pre-selected
+        chord_qualities = questionary.checkbox(
+            "Select chord qualities to generate (all selected by default):",
+            choices=[questionary.Choice(q, q, checked=True) for q in unique_qualities],
             style=custom_style,
         ).ask()
 
-        if chord_mode == "Select specific chord qualities and types":
-            # Extract unique chord qualities from CHORD_DEFINITIONS
-            unique_qualities = sorted(
-                set(quality for _, quality, _, _ in CHORD_DEFINITIONS)
+        if not chord_qualities:
+            print_warning(
+                "No chord qualities selected. Chord generation will be skipped."
             )
+            options_dict["chords"] = False
+        else:
+            # For each selected quality, show all chord types pre-selected
+            selected_chord_types = []
+            for quality in chord_qualities:
+                # Get all chord types for this quality
+                quality_chords = [
+                    (name, semitones)
+                    for name, q, semitones, _ in CHORD_DEFINITIONS
+                    if q == quality
+                ]
 
-            chord_qualities = questionary.checkbox(
-                "Select chord qualities to generate:",
-                choices=unique_qualities,
-                style=custom_style,
-            ).ask()
+                # Show all chord types pre-selected
+                selected_types = questionary.checkbox(
+                    f"Select {quality} chord types to generate (all selected by default):",
+                    choices=[
+                        questionary.Choice(name, name, checked=True)
+                        for name, _ in quality_chords
+                    ],
+                    style=custom_style,
+                ).ask()
 
-            if not chord_qualities:
-                print_warning(
-                    "No chord qualities selected. Chord generation will be skipped."
-                )
-                options_dict["chords"] = False
-            else:
-                # For each selected quality, let user select specific chord types
-                selected_chord_types = []
-                for quality in chord_qualities:
-                    # Get all chord types for this quality
-                    quality_chords = [
-                        (name, semitones)
-                        for name, q, semitones, _ in CHORD_DEFINITIONS
-                        if q == quality
-                    ]
+                if selected_types:
+                    selected_chord_types.extend(selected_types)
 
-                    # Let user select which chord types to include
-                    selected_types = questionary.checkbox(
-                        f"Select {quality} chord types to generate:",
-                        choices=[name for name, _ in quality_chords],
-                        style=custom_style,
-                    ).ask()
+                    # For each selected chord type, ask about inversions with all options visible
+                    for chord_type in selected_types:
+                        # Get the semitones for this chord type
+                        chord_semitones = next(
+                            semitones
+                            for name, _, semitones, _ in CHORD_DEFINITIONS
+                            if name == chord_type
+                        )
 
-                    if selected_types:
-                        selected_chord_types.extend(selected_types)
-
-                        # For each selected chord type, ask about inversions
-                        for chord_type in selected_types:
-                            # Get the semitones for this chord type
-                            chord_semitones = next(
-                                semitones
-                                for name, _, semitones, _ in CHORD_DEFINITIONS
-                                if name == chord_type
-                            )
-
-                            # Only ask about inversions for chords with 3 or more notes
-                            if len(chord_semitones) >= 3:
-                                inversion_choice = questionary.select(
-                                    f"Generate inversions for {chord_type}?",
-                                    choices=[
-                                        "No inversions",
-                                        "All inversions",
-                                        "Select specific inversions",
-                                    ],
-                                    style=custom_style,
-                                ).ask()
-
-                                if inversion_choice == "Select specific inversions":
-                                    # Calculate possible inversions
-                                    possible_inversions = list(
-                                        range(1, len(chord_semitones))
-                                    )
-                                    selected_inversions = questionary.checkbox(
-                                        f"Select inversions for {chord_type}:",
-                                        choices=[
-                                            (
-                                                f"{i}st inversion"
-                                                if i == 1
+                        # Only ask about inversions for chords with 3 or more notes
+                        if len(chord_semitones) >= 3:
+                            # Calculate possible inversions
+                            possible_inversions = list(range(1, len(chord_semitones)))
+                            selected_inversions = questionary.checkbox(
+                                f"Select inversions for {chord_type} (all selected by default):",
+                                choices=[
+                                    questionary.Choice(
+                                        (
+                                            f"{i}st inversion"
+                                            if i == 1
+                                            else (
+                                                f"{i}nd inversion"
+                                                if i == 2
                                                 else (
-                                                    f"{i}nd inversion"
-                                                    if i == 2
-                                                    else (
-                                                        f"{i}rd inversion"
-                                                        if i == 3
-                                                        else f"{i}th inversion"
-                                                    )
+                                                    f"{i}rd inversion"
+                                                    if i == 3
+                                                    else f"{i}th inversion"
                                                 )
                                             )
-                                            for i in possible_inversions
-                                        ],
-                                        style=custom_style,
-                                    ).ask()
-
-                                    # Store the selected inversions (convert from text to numbers)
-                                    if selected_inversions:
-                                        inversion_settings[chord_type] = [
-                                            int(inv.split()[0][0])
-                                            for inv in selected_inversions
-                                        ]
-                                    else:
-                                        inversion_settings[chord_type] = []
-                                elif inversion_choice == "All inversions":
-                                    inversion_settings[chord_type] = list(
-                                        range(1, len(chord_semitones))
+                                        ),
+                                        i,
+                                        checked=True,
                                     )
-                                else:  # "No inversions"
-                                    inversion_settings[chord_type] = []
+                                    for i in possible_inversions
+                                ],
+                                style=custom_style,
+                            ).ask()
 
-                if not selected_chord_types:
-                    print_warning(
-                        "No chord types selected. Chord generation will be skipped."
-                    )
-                    options_dict["chords"] = False
+                            # Store the selected inversions
+                            if selected_inversions:
+                                inversion_settings[chord_type] = selected_inversions
+                            else:
+                                inversion_settings[chord_type] = []
 
-        # If generating all chord types, ask about inversions globally
-        if chord_mode == "Generate all chord types":
+            if not selected_chord_types:
+                print_warning(
+                    "No chord types selected. Chord generation will be skipped."
+                )
+                options_dict["chords"] = False
+
+        # If generating all chord types, ask about inversions globally with all options visible
+        if not selected_chord_types:  # This means we're generating all types
             inversion_choice = questionary.select(
                 "How would you like to handle inversions?",
                 choices=[
-                    "No inversions",
-                    "All inversions for all chords",
-                    "All inversions for chords with 4 or fewer notes",
-                    "First inversion only for all chords",
+                    questionary.Choice("All inversions for all chords", "all"),
+                    questionary.Choice(
+                        "All inversions for chords with 4 or fewer notes", "limited"
+                    ),
+                    questionary.Choice(
+                        "First inversion only for all chords", "first_only"
+                    ),
+                    questionary.Choice("No inversions", "none"),
                 ],
+                default="all",  # Pre-select "All inversions for all chords"
                 style=custom_style,
             ).ask()
 
             # Store the global inversion setting
-            if inversion_choice == "All inversions for all chords":
+            if inversion_choice == "all":
                 generate_inversions = True
-            elif inversion_choice == "All inversions for chords with 4 or fewer notes":
+            elif inversion_choice == "limited":
                 generate_inversions = "limited"
-            elif inversion_choice == "First inversion only for all chords":
+            elif inversion_choice == "first_only":
                 generate_inversions = "first_only"
             else:
                 generate_inversions = False
