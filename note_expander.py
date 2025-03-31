@@ -2112,6 +2112,9 @@ def generate_full_chord_samples(chord_dir, prefix):
                 inversion_types[key] = []
 
             inversion_types[key].append(chord_file)
+            tqdm.write(
+                f"{INFO}Found inversion file: {filename} for {chord_type} {inversion_num}{RESET}"
+            )
         else:
             # Regular chord pattern: prefix-ChordType-NoteOctave.wav
             chord_match = re.search(rf"{prefix}-(.+)-{note_str}\.wav$", filename)
@@ -2304,6 +2307,10 @@ def generate_full_chord_samples(chord_dir, prefix):
             )
             continue
 
+        tqdm.write(
+            f"{INFO}Processing {len(sorted_files)} files for {chord_type} {inversion_num}{RESET}"
+        )
+
         # Load the first file to get sample rate
         first_audio, sr = librosa.load(sorted_files[0], sr=None)
 
@@ -2324,6 +2331,10 @@ def generate_full_chord_samples(chord_dir, prefix):
             filename = os.path.basename(inversion_file)
             note_match = re.search(r"([A-G]#?\d+)\.wav$", filename)
             note_str = note_match.group(1) if note_match else "Unknown"
+
+            tqdm.write(
+                f"{INFO}Adding {note_str} from {filename} to combined sample{RESET}"
+            )
 
             # Load the audio
             audio, _ = librosa.load(inversion_file, sr=sr)
@@ -2376,6 +2387,7 @@ def generate_full_chord_samples(chord_dir, prefix):
         inversions_dir = os.path.join(quality_dir, "inversions")
         if not os.path.exists(inversions_dir):
             os.makedirs(inversions_dir)
+            tqdm.write(f"{INFO}Created inversions directory: {inversions_dir}{RESET}")
 
         # Save the combined audio with embedded slice markers
         output_filename = f"{prefix}-{safe_chord_type}-{inversion_num}-Full.wav"
@@ -2383,8 +2395,8 @@ def generate_full_chord_samples(chord_dir, prefix):
 
         # First save the audio data using soundfile
         sf.write(output_path, combined_audio, sr)
-        print(
-            f"Generated full inversion sample file: {output_filename} (in exp directory)"
+        tqdm.write(
+            f"{SUCCESS}Generated full inversion sample file: {output_filename} in {inversions_dir}{RESET}"
         )
 
         # Now add slice markers to the WAV file
