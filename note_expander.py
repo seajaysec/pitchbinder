@@ -1324,7 +1324,9 @@ def generate_chords(
 
     # Debug info before returning
     print_info(f"Returning chord_dir: {chord_dir}")
-    print_info(f"Returning full_chord_filenames: {full_chord_filenames}")
+    print_info(f"Number of full_chord_filenames: {len(full_chord_filenames)}")
+    for idx, item in enumerate(full_chord_filenames):
+        print_info(f"  Chord file {idx+1}: {item}")
 
     return chord_dir, full_chord_filenames
 
@@ -2000,6 +2002,28 @@ def process_directory(
             print_info(
                 f"Chord generation complete: {len(full_chord_filenames)} chord types created"
             )
+            print_info(f"Received chord_dir: {generated_chord_dir}")
+            print_info(f"Received {len(full_chord_filenames)} chord files")
+
+            # Verify the chord files exist
+            for idx, item in enumerate(full_chord_filenames):
+                if isinstance(item, tuple):
+                    if len(item) == 3:
+                        quality, subdir, filename = item
+                        file_path = os.path.join(
+                            generated_chord_dir, quality, subdir, filename
+                        )
+                    else:
+                        quality, filename = item
+                        file_path = os.path.join(generated_chord_dir, quality, filename)
+                else:
+                    filename = item
+                    file_path = os.path.join(generated_chord_dir, filename)
+
+                if os.path.exists(file_path):
+                    print_info(f"  Chord file {idx+1} exists: {file_path}")
+                else:
+                    print_warning(f"  Chord file {idx+1} NOT FOUND: {file_path}")
         except Exception as e:
             print_error(f"Error during chord generation: {str(e)}")
             import traceback
