@@ -493,6 +493,7 @@ def generate_chord(
     target_dir,
     prefix,
     chord_duration_factor=4.0,
+    recursion_depth=0,  # Add recursion depth parameter to prevent infinite recursion
 ):
     """Generate a chord sample by mixing multiple note samples."""
     notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -502,8 +503,16 @@ def generate_chord(
         f"Generating chord with root {root_note}{root_octave} and semitones {semitones}"
     )
 
-    # Check if we're dealing with extreme octaves (1, 5-8)
-    is_extreme_octave = root_octave == 1 or root_octave >= 5
+    # Check recursion depth to prevent infinite recursion
+    if recursion_depth > 1:
+        print_warning(
+            f"Maximum recursion depth reached for {root_note}{root_octave}. Using direct generation instead."
+        )
+        # Skip the extreme octave approach and use direct generation
+        is_extreme_octave = False
+    else:
+        # Check if we're dealing with extreme octaves (1, 5-8)
+        is_extreme_octave = root_octave == 1 or root_octave >= 5
 
     # For extreme octaves, we'll use a more reliable approach
     # We'll generate the chord in a middle octave (3) and then pitch shift it
@@ -521,6 +530,7 @@ def generate_chord(
             target_dir,
             prefix,
             chord_duration_factor,
+            recursion_depth=recursion_depth + 1,  # Increment recursion depth
         )
 
         if middle_chord_audio is None:
@@ -596,6 +606,10 @@ def generate_chord(
 
     # For normal octaves, continue with the original approach
     # Get the sample rate from the first available sample
+    if not all_samples:
+        print_error(f"Error: No samples provided to generate chord")
+        return None, None
+
     first_sample = all_samples[0]
 
     # Check both source and target directories for the first sample
@@ -622,7 +636,11 @@ def generate_chord(
         return None, None
 
     # Load the sample to get the sample rate
-    _, sr = librosa.load(first_path, sr=None)
+    try:
+        _, sr = librosa.load(first_path, sr=None)
+    except Exception as e:
+        print_error(f"Error loading first sample {first_path}: {str(e)}")
+        return None, None
 
     # Initialize an empty array for the mixed audio
     mixed_audio = None
@@ -1068,15 +1086,55 @@ def generate_chords(
             results = []
             pitch_shift_results = {}
 
+            with tqdm_lock:
+                tqdm.write(f"{INFO}Processing batch of {len(batch)} tasks{RESET}")
+
             for task in batch:
-                if task["type"] == "chord":
-                    result, inv_results, path = process_chord_task(task)
-                    if result:
-                        results.append((result, inv_results, path))
-                elif task["type"] == "pitch_shift":
-                    result, inv_results, path = pitch_shift_chord_task(task)
-                    if result:
-                        results.append((result, inv_results, path))
+                try:
+                    if task["type"] == "chord":
+                        with tqdm_lock:
+                            tqdm.write(
+                                f"{INFO}Processing chord task: {task['chord_name']} at {task['note']}{task['octave']}{RESET}"
+                            )
+                        result, inv_results, path = process_chord_task(task)
+                        if result:
+                            results.append((result, inv_results, path))
+                            with tqdm_lock:
+                                tqdm.write(
+                                    f"{SUCCESS}Completed chord task: {task['chord_name']} at {task['note']}{task['octave']}{RESET}"
+                                )
+                        else:
+                            with tqdm_lock:
+                                tqdm.write(
+                                    f"{WARNING}Chord task returned no result: {task['chord_name']} at {task['note']}{task['octave']}{RESET}"
+                                )
+                    elif task["type"] == "pitch_shift":
+                        with tqdm_lock:
+                            tqdm.write(
+                                f"{INFO}Processing pitch shift task: {task['chord_name']} at {task['note']}{task['octave']}{RESET}"
+                            )
+                        result, inv_results, path = pitch_shift_chord_task(task)
+                        if result:
+                            results.append((result, inv_results, path))
+                            with tqdm_lock:
+                                tqdm.write(
+                                    f"{SUCCESS}Completed pitch shift task: {task['chord_name']} at {task['note']}{task['octave']}{RESET}"
+                                )
+                        else:
+                            with tqdm_lock:
+                                tqdm.write(
+                                    f"{WARNING}Pitch shift task returned no result: {task['chord_name']} at {task['note']}{task['octave']}{RESET}"
+                                )
+                except Exception as e:
+                    with tqdm_lock:
+                        tqdm.write(
+                            f"{ERROR}Exception processing task in batch: {str(e)}{RESET}"
+                        )
+
+            with tqdm_lock:
+                tqdm.write(
+                    f"{INFO}Batch processing complete, {len(results)} successful tasks{RESET}"
+                )
 
             return results
 
@@ -1098,6 +1156,12 @@ def generate_chords(
                 target_dir = task["target_dir"]
                 all_samples = task["all_samples"]
 
+                # Debug information - add this for troubleshooting
+                with tqdm_lock:
+                    tqdm.write(
+                        f"{INFO}Starting chord generation for {chord_name} at {note}{octave}{RESET}"
+                    )
+
                 # Generate the chord
                 chord_audio, sr = generate_chord(
                     note,
@@ -1108,6 +1172,7 @@ def generate_chords(
                     target_dir,
                     prefix,
                     chord_duration_factor=4.0,
+                    recursion_depth=0,  # Start with recursion depth 0
                 )
 
                 # Check if chord generation returned None
@@ -1125,6 +1190,12 @@ def generate_chords(
 
                 # Update progress counter
                 update_progress(is_chord=True)
+
+                # Debug success information
+                with tqdm_lock:
+                    tqdm.write(
+                        f"{SUCCESS}Successfully generated chord: {chord_filename}{RESET}"
+                    )
 
                 # Store the result
                 result = {
@@ -1148,6 +1219,12 @@ def generate_chords(
                                 note, octave, semitones[inv_num]
                             )
 
+                            # Debug information
+                            with tqdm_lock:
+                                tqdm.write(
+                                    f"{INFO}Starting inversion generation for {chord_name}, inversion {inv_num} at {new_root}{new_octave}{RESET}"
+                                )
+
                             # Generate the inverted chord
                             inv_chord_audio, inv_sr = generate_chord(
                                 new_root,
@@ -1158,6 +1235,7 @@ def generate_chords(
                                 target_dir,
                                 prefix,
                                 chord_duration_factor=4.0,
+                                recursion_depth=0,  # Start with recursion depth 0
                             )
 
                             # Check if inversion generation returned None
@@ -1247,6 +1325,11 @@ def generate_chords(
                 source_audio = task["source_audio"]
                 sr = task["sr"]
 
+                with tqdm_lock:
+                    tqdm.write(
+                        f"{INFO}Starting pitch shift from {source_note}{source_octave} to {note}{octave} for {chord_name}{RESET}"
+                    )
+
                 # Calculate the ratio for pitch shifting
                 source_freq = get_note_frequency(source_note, source_octave)
                 target_freq = get_note_frequency(note, octave)
@@ -1254,7 +1337,7 @@ def generate_chords(
 
                 with tqdm_lock:
                     tqdm.write(
-                        f"{INFO}    Pitch shifting {source_note}{source_octave} chord to {note}{octave}...{RESET}"
+                        f"{INFO}    Pitch shifting {source_note}{source_octave} chord to {note}{octave} (factor: {shift_factor:.2f})...{RESET}"
                     )
 
                 # Resample the audio
@@ -1262,6 +1345,12 @@ def generate_chords(
                     # For higher notes, we need to shorten the sample (speed up)
                     # For lower notes, we need to lengthen the sample (slow down)
                     new_length = int(len(source_audio) / shift_factor)
+
+                    with tqdm_lock:
+                        tqdm.write(
+                            f"{INFO}    Resampling from {len(source_audio)} to {new_length} samples{RESET}"
+                        )
+
                     new_audio = signal.resample(source_audio, new_length)
 
                     # Apply a smoother fade-out to avoid clicks
@@ -1284,6 +1373,12 @@ def generate_chords(
                     # Save the pitch-shifted chord
                     chord_filename = f"{prefix}-{safe_chord_name}-{note}{octave}.wav"
                     chord_path = os.path.join(quality_dir, chord_filename)
+
+                    with tqdm_lock:
+                        tqdm.write(
+                            f"{INFO}    Saving pitch-shifted chord to {chord_path}{RESET}"
+                        )
+
                     sf.write(chord_path, new_audio, sr)
 
                     # Update progress counter
@@ -1313,6 +1408,11 @@ def generate_chords(
                                 inversions_dir, inv_chord_filename
                             )
 
+                            with tqdm_lock:
+                                tqdm.write(
+                                    f"{INFO}    Saving inversion {inv_num} to {inv_chord_path}{RESET}"
+                                )
+
                             # Simply save the same audio with a different name
                             sf.write(inv_chord_path, new_audio, sr)
 
@@ -1340,6 +1440,9 @@ def generate_chords(
                     tqdm.write(
                         f"{ERROR}    Error pitch shifting to {task['note']}{task['octave']}: {str(e)}{RESET}"
                     )
+                    import traceback
+
+                    tqdm.write(f"{ERROR}    {traceback.format_exc()}{RESET}")
                 return None, None, None
 
         # Process tasks in optimized batches
@@ -1348,10 +1451,18 @@ def generate_chords(
         if batch_size < 1:
             batch_size = 1
 
+        with tqdm_lock:
+            print_info(
+                f"Creating {len(chord_tasks) // batch_size + (1 if len(chord_tasks) % batch_size > 0 else 0)} batches of size {batch_size}"
+            )
+
         batches = [
             chord_tasks[i : i + batch_size]
             for i in range(0, len(chord_tasks), batch_size)
         ]
+
+        with tqdm_lock:
+            print_info(f"Starting concurrent processing with {num_workers} workers")
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
             # Submit batches instead of individual tasks
@@ -1359,12 +1470,23 @@ def generate_chords(
                 executor.submit(process_batch, batch): batch for batch in batches
             }
 
+            with tqdm_lock:
+                print_info(f"Submitted {len(future_to_batch)} batch jobs")
+
             # Process results as they complete
             for future in concurrent.futures.as_completed(future_to_batch):
                 batch = future_to_batch[future]
 
+                with tqdm_lock:
+                    print_info(f"Processing results for batch of size {len(batch)}")
+
                 try:
                     batch_results = future.result()
+
+                    with tqdm_lock:
+                        print_info(
+                            f"Batch returned {len(batch_results)} successful results"
+                        )
 
                     for result, inversion_results, chord_path in batch_results:
                         # Update progress bar
@@ -1389,7 +1511,12 @@ def generate_chords(
 
                 except Exception as e:
                     with tqdm_lock:
-                        tqdm.write(f"{ERROR}Error processing batch: {str(e)}{RESET}")
+                        tqdm.write(
+                            f"{ERROR}Error processing batch results: {str(e)}{RESET}"
+                        )
+                        import traceback
+
+                        tqdm.write(f"{ERROR}{traceback.format_exc()}{RESET}")
                     # Update even on error - estimate based on batch size
                     pbar.update(len(batch) * 1.5)  # Rough estimate including inversions
 
@@ -1474,46 +1601,86 @@ def generate_chords(
         if pitch_shift_batch_size < 1 and pitch_shift_tasks:
             pitch_shift_batch_size = 1
 
+        with tqdm_lock:
+            if pitch_shift_tasks:
+                print_info(
+                    f"Creating {len(pitch_shift_tasks) // pitch_shift_batch_size + (1 if len(pitch_shift_tasks) % pitch_shift_batch_size > 0 else 0)} pitch-shift batches of size {pitch_shift_batch_size}"
+                )
+            else:
+                print_info("No pitch-shift tasks to process")
+
         pitch_shift_batches = [
             pitch_shift_tasks[i : i + pitch_shift_batch_size]
             for i in range(0, len(pitch_shift_tasks), pitch_shift_batch_size)
         ]
 
         # Process pitch-shifted chords in batches for better efficiency
-        with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-            # Submit batches of pitch-shift tasks
-            future_to_batch = {
-                executor.submit(process_batch, batch): batch
-                for batch in pitch_shift_batches
-            }
+        if pitch_shift_batches:
+            with tqdm_lock:
+                print_info(
+                    f"Starting concurrent processing for pitch-shift tasks with {num_workers} workers"
+                )
 
-            # Process results as they complete
-            for future in concurrent.futures.as_completed(future_to_batch):
-                batch = future_to_batch[future]
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=num_workers
+            ) as executor:
+                # Submit batches of pitch-shift tasks
+                future_to_batch = {
+                    executor.submit(process_batch, batch): batch
+                    for batch in pitch_shift_batches
+                }
 
-                try:
-                    batch_results = future.result()
+                with tqdm_lock:
+                    print_info(
+                        f"Submitted {len(future_to_batch)} pitch-shift batch jobs"
+                    )
 
-                    for result, inversion_results, chord_path in batch_results:
-                        # Update progress bar
-                        pbar.update(1)
+                # Process results as they complete
+                for future in concurrent.futures.as_completed(future_to_batch):
+                    batch = future_to_batch[future]
 
-                        # Add to full chord filenames
-                        full_chord_filenames.append(
-                            (result["quality"], result["chord_name"], chord_path)
-                        )
-
-                        # Update for inversions
-                        if inversion_results:
-                            pbar.update(len(inversion_results))
-
-                except Exception as e:
                     with tqdm_lock:
-                        tqdm.write(
-                            f"{ERROR}Error processing pitch shift batch: {str(e)}{RESET}"
+                        print_info(
+                            f"Processing results for pitch-shift batch of size {len(batch)}"
                         )
-                    # Update even on error - estimate based on batch size
-                    pbar.update(len(batch) * 1.5)  # Rough estimate including inversions
+
+                    try:
+                        batch_results = future.result()
+
+                        with tqdm_lock:
+                            print_info(
+                                f"Pitch-shift batch returned {len(batch_results)} successful results"
+                            )
+
+                        for result, inversion_results, chord_path in batch_results:
+                            # Update progress bar
+                            pbar.update(1)
+
+                            # Add to full chord filenames
+                            full_chord_filenames.append(
+                                (result["quality"], result["chord_name"], chord_path)
+                            )
+
+                            # Update for inversions
+                            if inversion_results:
+                                pbar.update(len(inversion_results))
+
+                    except Exception as e:
+                        with tqdm_lock:
+                            tqdm.write(
+                                f"{ERROR}Error processing pitch shift batch results: {str(e)}{RESET}"
+                            )
+                            import traceback
+
+                            tqdm.write(f"{ERROR}{traceback.format_exc()}{RESET}")
+                        # Update even on error - estimate based on batch size
+                        pbar.update(
+                            len(batch) * 1.5
+                        )  # Rough estimate including inversions
+
+        else:
+            with tqdm_lock:
+                print_info("Skipping pitch-shift processing as there are no tasks")
 
         # Close main progress bar
         pbar.close()
