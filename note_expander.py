@@ -60,6 +60,9 @@ tqdm_lock = threading.Lock()
 processing_status = {}
 status_lock = threading.Lock()
 
+# Initialize global variables
+log_file = None  # Path to log file, will be set later if logging is enabled
+
 
 def update_status(source_dir, message, status_type="info", overwrite=False):
     """Update the status display in the console with detailed information.
