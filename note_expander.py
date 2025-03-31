@@ -1825,7 +1825,9 @@ def process_directory(
     keep_artifacts=False,
     chord_qualities=None,
     generate_inversions=False,
-    overwrite=False,  # added parameter
+    selected_chords=None,
+    selected_inversions=None,
+    overwrite=False,
 ):
     """Process a single directory to generate missing samples."""
     # Acquire lock for consistent console output when running in parallel
@@ -1920,6 +1922,8 @@ def process_directory(
             target_dir,  # Pass the expansion directory
             chord_qualities=chord_qualities,
             generate_inversions=generate_inversions,
+            selected_chords=selected_chords,
+            selected_inversions=selected_inversions,
         )
         update_status(
             source_dir,
