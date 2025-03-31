@@ -2439,7 +2439,6 @@ def interactive_mode():
     # Get source directory with autocomplete
     source_dir_input = questionary.text(
         "Enter the source directory containing WAV samples:",
-        default=os.getcwd(),  # Use current working directory as default
         style=custom_style,
         completer=PathCompleter(),
     ).ask()
