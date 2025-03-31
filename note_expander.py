@@ -2204,7 +2204,7 @@ def generate_full_chord_samples(chord_dir, prefix):
             os.makedirs(quality_dir)
 
         # Save the combined audio with embedded slice markers
-        output_filename = f"{prefix}-{safe_chord_type}.wav"
+        output_filename = f"{safe_chord_type}.wav"
         output_path = os.path.join(quality_dir, output_filename)
 
         # First save the audio data using soundfile
@@ -2339,7 +2339,7 @@ def generate_full_chord_samples(chord_dir, prefix):
             os.makedirs(inversions_dir)
 
         # Save the combined audio with embedded slice markers
-        output_filename = f"{prefix}-{safe_chord_type}-{inversion_num}.wav"
+        output_filename = f"{safe_chord_type}-{inversion_num}.wav"
         output_path = os.path.join(inversions_dir, output_filename)
 
         # First save the audio data using soundfile
