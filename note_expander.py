@@ -902,6 +902,13 @@ def generate_chords(
     """Generate chord samples based on the provided chord definitions."""
     notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
+    # Check if chord_dir already exists and overwrite is not enabled
+    if not overwrite and os.path.exists(chord_dir):
+        print_info(
+            f"Chord directory {chord_dir} already exists and overwrite is not enabled. Skipping chord generation."
+        )
+        return chord_dir, []
+
     # Use the hardcoded chord definitions
     chord_defs = CHORD_DEFINITIONS
 
