@@ -1262,6 +1262,17 @@ def generate_chords(
                             # Generate inversions for this chord if requested
                             if generate_inversions and inversions:
                                 for inv_num, inv_semitones in inversions:
+                                    # Skip if this inversion is not in the selected inversions for this chord
+                                    if selected_inversions is not None:
+                                        # Check if this chord type has selected inversions
+                                        chord_key = (quality, chord_name)
+                                        if (
+                                            chord_key not in selected_inversions
+                                            or inv_num
+                                            not in selected_inversions[chord_key]
+                                        ):
+                                            continue
+
                                     # For pitch-shifted chords, we need to use the same approach
                                     # Instead of generating from scratch, pitch-shift the chord we just created
                                     inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
@@ -1783,25 +1794,62 @@ def cleanup_artifacts(
                     if not os.path.exists(inversions_dir):
                         os.makedirs(inversions_dir)
 
-                    # Modify the chord filename to remove any "-Full" suffix for the destination
-                    clean_filename = re.sub(
-                        r"(?:-\d+)?-Full(?=\.wav$)", "", chord_filename
-                    )
-                    dest_path = os.path.join(inversions_dir, clean_filename)
+                    # Get just the chord type and inversion number for the destination filename
+                    chord_type_match = re.search(r"-([^-]+)-(\d+stInv)", chord_filename)
+                    if chord_type_match:
+                        chord_type, inv_num = chord_type_match.groups()
+                        dest_filename = f"{chord_type}-{inv_num}.wav"
+                    else:
+                        # If we can't parse the filename, use it as is but remove any -Full suffix
+                        dest_filename = re.sub(
+                            r"(?:-\d+)?-Full(?=\.wav$)", "", chord_filename
+                        )
+                    dest_path = os.path.join(inversions_dir, dest_filename)
                 else:
-                    # Modify the chord filename to remove any "-Full" suffix for the destination
-                    clean_filename = re.sub(
-                        r"(?:-\d+)?-Full(?=\.wav$)", "", chord_filename
+                    # Get just the chord type for the destination filename
+                    chord_type_match = re.search(
+                        r"-([^-]+)(?:-[A-G]#?\d+)?\.wav$", chord_filename
                     )
-                    dest_path = os.path.join(quality_dir, clean_filename)
+                    if chord_type_match:
+                        chord_type = chord_type_match.group(1)
+                        dest_filename = f"{chord_type}.wav"
+                    else:
+                        # If we can't parse the filename, use it as is but remove any -Full suffix
+                        dest_filename = re.sub(
+                            r"(?:-\d+)?-Full(?=\.wav$)", "", chord_filename
+                        )
+                    dest_path = os.path.join(quality_dir, dest_filename)
 
-                # Copy the file
-                import shutil
+                # Only copy if the source file exists and has content
+                if os.path.exists(chord_path) and os.path.getsize(chord_path) > 0:
+                    # Check if destination exists and has content
+                    if os.path.exists(dest_path) and os.path.getsize(dest_path) > 0:
+                        # Compare file sizes and modification times
+                        src_size = os.path.getsize(chord_path)
+                        src_mtime = os.path.getmtime(chord_path)
+                        dst_size = os.path.getsize(dest_path)
+                        dst_mtime = os.path.getmtime(dest_path)
 
-                shutil.copy2(chord_path, dest_path)
-                print_success(f"Copied chord file to {dest_path}")
+                        # Only overwrite if source is newer or different size
+                        if src_mtime > dst_mtime or src_size != dst_size:
+                            import shutil
 
-    # Now remove the artifact directories
+                            shutil.copy2(chord_path, dest_path)
+                            print_success(f"Updated chord file: {dest_path}")
+                        else:
+                            print_info(f"Skipping unchanged chord file: {dest_path}")
+                    else:
+                        # Destination doesn't exist or is empty, safe to copy
+                        import shutil
+
+                        shutil.copy2(chord_path, dest_path)
+                        print_success(f"Copied chord file to {dest_path}")
+                else:
+                    print_warning(
+                        f"Source chord file is missing or empty: {chord_path}"
+                    )
+
+    # Now remove the temporary directories
     import shutil
 
     def robust_rmtree(directory):
@@ -1846,15 +1894,21 @@ def cleanup_artifacts(
                 print_info("Continuing anyway as this won't affect the results.")
                 return False
 
-    if os.path.exists(target_dir):
+    # Remove the temporary expansion directory
+    if os.path.exists(target_dir) and target_dir != exp_dir:
         print_info(f"Removing expansion directory: {target_dir}")
         robust_rmtree(target_dir)
 
-    if chord_dir and os.path.exists(chord_dir):
+    # Remove the temporary chord directory
+    if (
+        chord_dir
+        and os.path.exists(chord_dir)
+        and chord_dir != os.path.join(exp_dir, "chords")
+    ):
         print_info(f"Removing chord directory: {chord_dir}")
         robust_rmtree(chord_dir)
 
-    print_success("Artifact cleanup complete")
+    print_success("Cleanup complete")
 
 
 def process_directory(
@@ -2135,6 +2189,11 @@ def generate_full_chord_samples(chord_dir, prefix):
 
         sorted_files = sorted(files, key=sort_key)
 
+        # Skip if no files found
+        if not sorted_files:
+            tqdm.write(f"{WARNING}No files found for {quality} {chord_type}{RESET}")
+            continue
+
         # Load the first file to get sample rate
         first_audio, sr = librosa.load(sorted_files[0], sr=None)
 
@@ -2204,7 +2263,7 @@ def generate_full_chord_samples(chord_dir, prefix):
             os.makedirs(quality_dir)
 
         # Save the combined audio with embedded slice markers
-        output_filename = f"{prefix}-{safe_chord_type}.wav"
+        output_filename = f"{safe_chord_type}.wav"  # Removed prefix and note
         output_path = os.path.join(quality_dir, output_filename)
 
         # First save the audio data using soundfile
@@ -2253,7 +2312,7 @@ def generate_full_chord_samples(chord_dir, prefix):
 
         pbar.update(1)
 
-    # Process inversion types - THIS IS THE ADDED CODE
+    # Process inversion types
     for (quality, chord_type, inversion_num), files in inversion_types.items():
         # Sort files by note and octave using the same sort function as before
         sorted_files = sorted(files, key=sort_key)
@@ -2339,7 +2398,9 @@ def generate_full_chord_samples(chord_dir, prefix):
             os.makedirs(inversions_dir)
 
         # Save the combined audio with embedded slice markers
-        output_filename = f"{prefix}-{safe_chord_type}-{inversion_num}.wav"
+        output_filename = (
+            f"{safe_chord_type}-{inversion_num}.wav"  # Removed prefix and note
+        )
         output_path = os.path.join(inversions_dir, output_filename)
 
         # First save the audio data using soundfile
@@ -2492,88 +2553,48 @@ def interactive_mode():
 
     if not wav_files:
         print_warning(
-            f"No WAV files found in {source_dir}. Are you sure this is the right directory?"
+            f"No WAV files found in {source_dir}. Will look in subdirectories if any exist."
         )
-        if not questionary.confirm("Continue anyway?", style=custom_style).ask():
-            if questionary.confirm(
-                "Would you like to try a different directory?", style=custom_style
-            ).ask():
-                return interactive_mode()
-            return
 
-    # Ask about recursive mode
-    recurse = questionary.confirm(
-        "Process all subdirectories recursively?", default=False, style=custom_style
-    ).ask()
+    # Always use recursive mode
+    recurse = True
+    print_info("Using recursive mode to process all subdirectories")
 
-    # Ask about parallelization only if recursive mode is selected
-    use_parallel = False
-    max_workers = 1
-    if recurse:
-        use_parallel = questionary.confirm(
-            "Process directories in parallel? (Faster but uses more system resources)",
-            default=True,
-            style=custom_style,
-        ).ask()
+    # Set parallel processing to True by default without asking
+    use_parallel = True
+    # Calculate optimal number of workers based on system resources
+    max_workers = get_optimal_workers()
+    print_info(f"Using {max_workers} parallel workers for processing")
 
-        if use_parallel:
-            # Calculate optimal number of workers based on system resources
-            optimal_workers = get_optimal_workers()
-
-            # Let user adjust the number of workers or use the suggested value
-            max_workers_options = [
-                f"Automatic ({optimal_workers} worker{'s' if optimal_workers > 1 else ''})",
-                "Custom number...",
-            ]
-
-            worker_choice = questionary.select(
-                "How many parallel workers to use?",
-                choices=max_workers_options,
-                style=custom_style,
-            ).ask()
-
-            if worker_choice.startswith("Automatic"):
-                max_workers = optimal_workers
-            else:
-                # Get custom number from user
-                max_workers = questionary.text(
-                    f"Enter number of workers (1-{multiprocessing.cpu_count()}):",
-                    default=str(optimal_workers),
-                    validate=lambda text: text.isdigit()
-                    and 1 <= int(text) <= multiprocessing.cpu_count(),
-                    style=custom_style,
-                ).ask()
-                max_workers = int(max_workers)
-
-    # Ask about prefix
-    use_custom_prefix = questionary.confirm(
-        "Use a custom prefix for generated files? (Otherwise auto-detect)",
-        default=False,
-        style=custom_style,
-    ).ask()
-
+    # Initialize prefix to None
     prefix = None
-    if use_custom_prefix:
-        prefix = questionary.text(
-            "Enter the prefix for generated files:", style=custom_style
-        ).ask()
 
     # Ask about other options
     options = questionary.checkbox(
         "Select additional options:",
         choices=[
             questionary.Choice(
-                "Generate a single WAV file with all notes in sequence", "gen_full"
+                "Generate a single WAV file with all notes in sequence",
+                "gen_full",
+                checked=True,
             ),
             questionary.Choice(
                 "Match all generated samples to the average length of source samples",
                 "time_match",
+                checked=True,
             ),
-            questionary.Choice("Generate chord samples", "chords"),
+            questionary.Choice("Generate chord samples", "chords", checked=True),
             questionary.Choice("Play all notes when done", "play"),
             questionary.Choice("Overwrite existing expansion directories", "overwrite"),
             questionary.Choice(
                 "Keep all generated files (don't clean up artifacts)", "keep_artifacts"
+            ),
+            questionary.Choice(
+                "Use a custom prefix for generated files (Otherwise auto-detect)",
+                "use_custom_prefix",
+            ),
+            questionary.Choice(
+                "Set custom number of parallel workers", "set_custom_workers"
             ),
         ],
         style=custom_style,
@@ -2587,7 +2608,31 @@ def interactive_mode():
         "play": "play" in options,
         "overwrite": "overwrite" in options,
         "keep_artifacts": "keep_artifacts" in options,
+        "use_custom_prefix": "use_custom_prefix" in options,
+        "set_custom_workers": "set_custom_workers" in options,
     }
+
+    # Handle custom prefix if selected
+    if options_dict["use_custom_prefix"]:
+        prefix = questionary.text(
+            "Enter the prefix for generated files:", style=custom_style
+        ).ask()
+
+    # Handle custom workers if selected and parallel processing is enabled
+    if options_dict["set_custom_workers"] and use_parallel:
+        # Calculate optimal number of workers based on system resources
+        optimal_workers = get_optimal_workers()
+
+        # Get custom number from user
+        max_workers_input = questionary.text(
+            f"Enter number of workers (1-{multiprocessing.cpu_count()}):",
+            default=str(optimal_workers),
+            validate=lambda text: text.isdigit()
+            and 1 <= int(text) <= multiprocessing.cpu_count(),
+            style=custom_style,
+        ).ask()
+        max_workers = int(max_workers_input)
+        print_info(f"Using {max_workers} parallel workers for processing")
 
     # If chord generation is selected, ask for more details
     chord_qualities = None
@@ -2595,160 +2640,151 @@ def interactive_mode():
     selected_inversions = None  # New variable to store selected inversions
     generate_inversions = False
     if options_dict["chords"]:
-        chord_mode = questionary.select(
-            "How would you like to generate chords?",
-            choices=["Generate all chord types", "Select specific chord qualities"],
+        # Automatically choose "Select specific chord qualities"
+        chord_mode = "Select specific chord qualities"
+        print_info("Using specific chord qualities mode")
+
+        # Extract unique chord qualities from CHORD_DEFINITIONS
+        unique_qualities = sorted(
+            set(quality for _, quality, _, _ in CHORD_DEFINITIONS)
+        )
+
+        # Create a list of choice objects with all checked by default
+        quality_choices = [
+            questionary.Choice(quality, quality, checked=True)
+            for quality in unique_qualities
+        ]
+
+        chord_qualities = questionary.checkbox(
+            "Select chord qualities to generate (all selected by default):",
+            choices=quality_choices,
             style=custom_style,
         ).ask()
 
-        if chord_mode == "Select specific chord qualities":
-            # Extract unique chord qualities from CHORD_DEFINITIONS
-            unique_qualities = sorted(
-                set(quality for _, quality, _, _ in CHORD_DEFINITIONS)
+        if not chord_qualities:
+            print_warning(
+                "No chord qualities selected. Chord generation will be skipped."
             )
-
-            chord_qualities = questionary.checkbox(
-                "Select chord qualities to generate:",
-                choices=unique_qualities,
-                style=custom_style,
-            ).ask()
-
-            if not chord_qualities:
-                print_warning(
-                    "No chord qualities selected. Chord generation will be skipped."
-                )
-                options_dict["chords"] = False
+            options_dict["chords"] = False
 
         # Ask about specific chord types within selected qualities
         if options_dict["chords"]:
-            chord_type_mode = questionary.select(
-                "Would you like to select specific chord types within each quality?",
-                choices=[
-                    "Generate all chord types (default)",
-                    "Select specific chord types",
-                ],
-                style=custom_style,
-            ).ask()
+            # Automatically choose "Select specific chord types"
+            chord_type_mode = "Select specific chord types"
+            print_info("Using specific chord types mode")
 
-            if chord_type_mode == "Select specific chord types":
-                selected_chord_types = {}
+            selected_chord_types = {}
 
-                # Filter chord definitions by selected qualities or use all qualities
+            # Filter chord definitions by selected qualities or use all qualities
+            qualities_to_process = (
+                chord_qualities
+                if chord_qualities
+                else sorted(set(quality for _, quality, _, _ in CHORD_DEFINITIONS))
+            )
+
+            for quality in qualities_to_process:
+                # Extract chord types for this quality
+                chord_types_for_quality = [
+                    (name, semitones, notes_count)
+                    for name, q, semitones, notes_count in CHORD_DEFINITIONS
+                    if q == quality
+                ]
+
+                # Create a list of choice objects with all checked by default
+                chord_type_choices = [
+                    questionary.Choice(name, name, checked=True)
+                    for name, _, _ in chord_types_for_quality
+                ]
+
+                selected_types = questionary.checkbox(
+                    f"Select chord types for {quality} quality (all selected by default):",
+                    choices=chord_type_choices,
+                    style=custom_style,
+                ).ask()
+
+                if selected_types:
+                    selected_chord_types[quality] = selected_types
+
+        # Ask about inversions if chord generation is still enabled
+        if options_dict["chords"]:
+            # Automatically choose "Select specific inversions"
+            inversion_mode = "Select specific inversions"
+            print_info("Using specific inversions mode with all inversions preselected")
+
+            generate_inversions = True
+            selected_inversions = {}
+
+            # Get all selected chord types and their note counts
+            chord_types_to_process = []
+            if selected_chord_types:
+                # Use selected chord types
+                for quality, types in selected_chord_types.items():
+                    for chord_type in types:
+                        # Find the chord definition to get note count
+                        for name, q, semitones, notes_count in CHORD_DEFINITIONS:
+                            if name == chord_type and q == quality:
+                                chord_types_to_process.append(
+                                    (quality, chord_type, notes_count)
+                                )
+                                break
+            else:
+                # Use all chord types from selected qualities or all qualities
                 qualities_to_process = (
                     chord_qualities
                     if chord_qualities
                     else sorted(set(quality for _, quality, _, _ in CHORD_DEFINITIONS))
                 )
+                for name, quality, semitones, notes_count in CHORD_DEFINITIONS:
+                    if quality in qualities_to_process:
+                        chord_types_to_process.append((quality, name, notes_count))
 
-                for quality in qualities_to_process:
-                    # Extract chord types for this quality
-                    chord_types_for_quality = [
-                        (name, semitones, notes_count)
-                        for name, q, semitones, notes_count in CHORD_DEFINITIONS
-                        if q == quality
-                    ]
-                    chord_type_choices = [
-                        name for name, _, _ in chord_types_for_quality
+            # Function to get proper ordinal suffix
+            def get_ordinal_suffix(n):
+                if 10 <= n % 100 <= 20:
+                    suffix = "th"
+                else:
+                    suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+                return f"{n}{suffix}"
+
+            # Process each chord type individually for more granular control
+            for quality, chord_type, notes_count in sorted(
+                chord_types_to_process, key=lambda x: (x[0], x[1])
+            ):
+                if notes_count >= 3:  # Only process chords that can have inversions
+                    possible_inversions = notes_count - 1
+                    inversion_choices = [
+                        get_ordinal_suffix(i) for i in range(1, possible_inversions + 1)
                     ]
 
-                    selected_types = questionary.checkbox(
-                        f"Select chord types for {quality} quality:",
-                        choices=chord_type_choices,
+                    header = f"Select inversions for {chord_type} ({quality}) - {notes_count}-note chord:"
+                    print_info(f"\nPossible inversions: {', '.join(inversion_choices)}")
+
+                    # Create choice objects with all checked by default
+                    inversion_choices_objects = [
+                        questionary.Choice(inv, inv, checked=True)
+                        for inv in inversion_choices
+                    ]
+
+                    selected = questionary.checkbox(
+                        header,
+                        choices=inversion_choices_objects,
                         style=custom_style,
                     ).ask()
 
-                    if selected_types:
-                        selected_chord_types[quality] = selected_types
-            else:
-                # Default is to use all chord types
-                selected_chord_types = None
-
-        # Ask about inversions if chord generation is still enabled
-        if options_dict["chords"]:
-            inversion_mode = questionary.select(
-                "How would you like to handle chord inversions?",
-                choices=[
-                    "Generate all inversions (default)",
-                    "Select specific inversions",
-                    "No inversions",
-                ],
-                style=custom_style,
-            ).ask()
-
-            if inversion_mode == "Generate all inversions (default)":
-                generate_inversions = True
-                selected_inversions = None  # All inversions
-            elif inversion_mode == "Select specific inversions":
-                generate_inversions = True
-                selected_inversions = {}
-
-                # Get all selected chord types and their note counts
-                chord_types_to_process = []
-                if selected_chord_types:
-                    # Use selected chord types
-                    for quality, types in selected_chord_types.items():
-                        for chord_type in types:
-                            # Find the chord definition to get note count
-                            for name, q, semitones, notes_count in CHORD_DEFINITIONS:
-                                if name == chord_type and q == quality:
-                                    chord_types_to_process.append(
-                                        (quality, chord_type, notes_count)
-                                    )
-                                    break
-                else:
-                    # Use all chord types from selected qualities or all qualities
-                    qualities_to_process = (
-                        chord_qualities
-                        if chord_qualities
-                        else sorted(
-                            set(quality for _, quality, _, _ in CHORD_DEFINITIONS)
-                        )
-                    )
-                    for name, quality, semitones, notes_count in CHORD_DEFINITIONS:
-                        if quality in qualities_to_process:
-                            chord_types_to_process.append((quality, name, notes_count))
-
-                # Function to get proper ordinal suffix
-                def get_ordinal_suffix(n):
-                    if 10 <= n % 100 <= 20:
-                        suffix = "th"
-                    else:
-                        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-                    return f"{n}{suffix}"
-
-                # Process each chord type individually for more granular control
-                for quality, chord_type, notes_count in sorted(
-                    chord_types_to_process, key=lambda x: (x[0], x[1])
-                ):
-                    if notes_count >= 3:  # Only process chords that can have inversions
-                        possible_inversions = notes_count - 1
-                        inversion_choices = [
-                            get_ordinal_suffix(i)
-                            for i in range(1, possible_inversions + 1)
+                    if selected:
+                        # Convert from ordinal format to inversion numbers
+                        inversion_numbers = [
+                            int(inv.rstrip("stndrh")) for inv in selected
                         ]
-
-                        header = f"Select inversions for {chord_type} ({quality}) - {notes_count}-note chord:"
+                        selected_inversions[(quality, chord_type)] = inversion_numbers
+                    else:
+                        # No inversions selected for this chord type
                         print_info(
-                            f"\nPossible inversions: {', '.join(inversion_choices)}"
+                            f"No inversions selected for {chord_type} ({quality})"
                         )
-
-                        selected = questionary.checkbox(
-                            header,
-                            choices=inversion_choices,
-                            style=custom_style,
-                        ).ask()
-
-                        if selected:
-                            # Convert from ordinal format to inversion numbers
-                            inversion_numbers = [
-                                int(inv.rstrip("stndrh")) for inv in selected
-                            ]
-                            selected_inversions[(quality, chord_type)] = (
-                                inversion_numbers
-                            )
-            else:  # "No inversions"
-                generate_inversions = False
-                selected_inversions = []
+    else:  # No chord generation
+        generate_inversions = False
+        selected_inversions = []
 
     # Confirm settings
     print_info("\nYour selected settings:")
@@ -2790,7 +2826,7 @@ def interactive_mode():
 
                     # Display grouped inversions
                     for inv_list, chords in inv_to_chords.items():
-                        inv_str = ", ".join(get_ordinal_suffix(i) for i in inv_list)
+                        inv_str = ", ".join([get_ordinal_suffix(i) for i in inv_list])
                         chord_str = ", ".join(chords)
                         print(f"  {inv_str} for: {chord_str}")
                 else:
