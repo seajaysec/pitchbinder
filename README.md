@@ -1,6 +1,6 @@
 # Pitchbinder - Single notes to M8 sliced ranges and chords
 
-A powerful tool for expanding a small set of piano samples into a complete 8-octave range.
+A powerful tool for expanding a small set of samples into a complete 8-octave range, as well as any associated chords and inversions you'd like. Output is pre-sliced per root note, with full compatibility for the Dirtywave M8 and OcenAudio.
 
 ## Overview
 
