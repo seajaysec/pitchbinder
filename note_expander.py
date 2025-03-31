@@ -1725,6 +1725,10 @@ def cleanup_artifacts(
 
     # Copy chord files to their respective quality directories in exp/chords
     if full_chord_filenames and chord_dir:
+        print_info(f"Copying {len(full_chord_filenames)} chord files to final location")
+        inversion_count = 0
+        regular_count = 0
+
         for chord_item in full_chord_filenames:
             # Handle different formats of chord_item
             if isinstance(chord_item, tuple):
@@ -1735,11 +1739,16 @@ def cleanup_artifacts(
                     chord_path = os.path.join(
                         chord_dir, quality, subdir, chord_filename
                     )
+                    is_inversion = True
+                    inversion_count += 1
+                    print_info(f"Processing inversion file: {chord_path}")
                 else:
                     # Format: (quality, filename)
                     quality, chord_filename = chord_item
                     # Find the chord file in the chord directory structure
                     chord_path = os.path.join(chord_dir, quality, chord_filename)
+                    is_inversion = False
+                    regular_count += 1
             else:
                 # Format: filename
                 chord_filename = chord_item
@@ -1750,10 +1759,19 @@ def cleanup_artifacts(
                 else:
                     quality = "Other"
                 chord_path = os.path.join(chord_dir, chord_filename)
+                is_inversion = False
+                regular_count += 1
 
             if os.path.exists(chord_path):
                 # Determine if this is an inversion
-                is_inversion = "inversions" in chord_path or "-stInv-" in chord_filename
+                is_inversion = (
+                    is_inversion
+                    or "inversions" in chord_path
+                    or "-stInv-" in chord_filename
+                )
+                print_info(
+                    f"Found chord file: {chord_path} (is_inversion: {is_inversion})"
+                )
 
                 # Create quality directory in exp/chords
                 quality_dir = os.path.join(chords_dir, quality)
@@ -1774,6 +1792,12 @@ def cleanup_artifacts(
 
                 shutil.copy2(chord_path, dest_path)
                 print_success(f"Copied chord file to {dest_path}")
+            else:
+                print_warning(f"Could not find chord file: {chord_path}")
+
+        print_info(
+            f"Copied {regular_count} regular chord files and {inversion_count} inversion files"
+        )
 
     # Now remove the artifact directories
     import shutil
