@@ -1739,6 +1739,7 @@ def cleanup_artifacts(
 
     # Copy chord files to their respective quality directories in exp/chords
     if full_chord_filenames and chord_dir:
+        print_info(f"Found {len(full_chord_filenames)} chord files to copy")
         for chord_item in full_chord_filenames:
             # Handle different formats of chord_item
             if isinstance(chord_item, tuple):
@@ -1749,6 +1750,7 @@ def cleanup_artifacts(
                     chord_path = os.path.join(
                         chord_dir, quality, subdir, chord_filename
                     )
+                    print_info(f"Looking for chord file at: {chord_path}")
                 else:
                     # Format: (quality, filename)
                     quality, chord_filename = chord_item
