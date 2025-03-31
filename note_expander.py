@@ -1479,6 +1479,13 @@ def generate_chords(
         # Close main progress bar
         pbar.close()
 
+        # Final status update with summary of what was generated
+        update_status(
+            source_dir,
+            f"Chord generation task complete - Generated {chord_count} chords and {inversion_count} inversions in total",
+            "info",
+        )
+
     # Create separate full chord sample files by quality and chord type
     full_chord_filenames = generate_full_chord_samples(chord_dir, prefix)
 
