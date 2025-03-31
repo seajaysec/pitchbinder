@@ -392,6 +392,40 @@ CHORD_DEFINITIONS = [
 ]
 
 
+def get_chord_names_by_quality(quality):
+    """Get all chord names for a specific quality from CHORD_DEFINITIONS."""
+    return [name for name, q, _, _ in CHORD_DEFINITIONS if q == quality]
+
+
+def get_available_inversions(chord_name):
+    """Get the available inversion levels for a chord based on its name.
+
+    Returns a list of tuples: [(inversion_number, display_name), ...]
+    """
+    # Find the chord in the definitions
+    for name, _, semitones, _ in CHORD_DEFINITIONS:
+        if name == chord_name:
+            # Skip if chord has less than 3 notes (power chords, etc.)
+            if len(semitones) < 3:
+                return []
+
+            # Generate a readable name for each inversion level
+            result = []
+            for i in range(1, len(semitones)):
+                if i == 1:
+                    suffix = "st"
+                elif i == 2:
+                    suffix = "nd"
+                elif i == 3:
+                    suffix = "rd"
+                else:
+                    suffix = "th"
+                result.append((i, f"{i}{suffix} inversion"))
+            return result
+
+    return []  # If chord not found
+
+
 def get_note_from_semitone(root_note, root_octave, semitone_offset):
     """Get the note and octave given a root note and semitone offset."""
     notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
