@@ -870,25 +870,34 @@ def generate_chords(
                 f"Filtered to {len(chord_defs)} chord types in qualities: {', '.join(chord_qualities)}"
             )
 
-        # Further filter by selected chord types if specified
+        # Filter by specific chord types if specified
         if selected_chord_types:
             chord_defs = [
                 chord for chord in chord_defs if chord[0] in selected_chord_types
             ]
-            print_info(f"Filtered to {len(chord_defs)} specific chord types")
+            print_info(
+                f"Further filtered to {len(chord_defs)} specific chord types: {', '.join(selected_chord_types)}"
+            )
 
         print_header(f"Generating {len(chord_defs)} chord types")
 
-        # Print inversion generation mode
-        if isinstance(generate_inversions, bool):
-            if generate_inversions:
-                print_info("Inversions will be generated for all applicable chords")
-            else:
-                print_info("No inversions will be generated")
+        if isinstance(generate_inversions, bool) and generate_inversions:
+            print_info("All inversions will be generated for applicable chords")
         elif generate_inversions == "limited":
-            print_info("Inversions will be generated for chords with 4 or fewer notes")
+            print_info(
+                "All inversions will be generated for chords with 4 or fewer notes"
+            )
         elif generate_inversions == "first_only":
-            print_info("Only first inversions will be generated")
+            print_info("Only first inversion will be generated for applicable chords")
+        elif inversion_settings:
+            print_info(
+                "Specific inversions will be generated according to user selection"
+            )
+            for chord_type, inv_list in inversion_settings.items():
+                if inv_list:
+                    print_info(
+                        f"  {chord_type}: {', '.join([f'{i}st' if i == 1 else f'{i}nd' if i == 2 else f'{i}rd' if i == 3 else f'{i}th' for i in inv_list])} inversion(s)"
+                    )
 
         # Create the main chord directory if it doesn't exist
         if not os.path.exists(chord_dir):
@@ -971,9 +980,7 @@ def generate_chords(
             if not os.path.exists(quality_dir):
                 os.makedirs(quality_dir)
 
-            # Create inversions directory if needed
-            # Always create inversions directory for consistent structure,
-            # even if no inversions are requested for this quality
+            # Always create inversions directory for consistent structure
             inversions_dir = os.path.join(quality_dir, "inversions")
             if not os.path.exists(inversions_dir):
                 os.makedirs(inversions_dir)
@@ -1073,7 +1080,7 @@ def generate_chords(
                         core_chords[(note, octave)] = (chord_path, chord_audio, sr)
 
                         # Generate inversions for this chord if requested
-                        if generate_inversions and inversions:
+                        if inversions:
                             for inv_num, inv_semitones in inversions:
                                 try:
                                     # Compute the new root for the inversion based on the original semitones.
@@ -1250,7 +1257,7 @@ def generate_chords(
                                 )
 
                             # Generate inversions for this chord if requested
-                            if generate_inversions and inversions:
+                            if inversions:
                                 for inv_num, inv_semitones in inversions:
                                     # For pitch-shifted chords, we need to use the same approach
                                     # Instead of generating from scratch, pitch-shift the chord we just created
@@ -1273,7 +1280,7 @@ def generate_chords(
                         master_pbar.update(1)
 
                         # Update for inversions if applicable
-                        if generate_inversions and inversions and closest_core:
+                        if inversions and closest_core:
                             master_pbar.update(len(inversions))
 
             # Update chord progress bar
