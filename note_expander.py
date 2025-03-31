@@ -1062,7 +1062,9 @@ def generate_chords(
 
                     if chord_audio is not None:
                         # Save the chord
-                        chord_filename = f"{safe_chord_name}-{note}{octave}.wav"
+                        chord_filename = (
+                            f"{prefix}-{safe_chord_name}-{note}{octave}.wav"
+                        )
                         chord_path = os.path.join(quality_dir, chord_filename)
                         sf.write(chord_path, chord_audio, sr)
                         tqdm.write(f"{SUCCESS}    Generated {chord_filename}{RESET}")
@@ -1115,7 +1117,7 @@ def generate_chords(
                                         raise ValueError("Inversion generation failed")
 
                                     # Save the inverted chord with inversion number in filename
-                                    inv_chord_filename = f"{safe_chord_name}-{inv_num}stInv-{new_root}{new_octave}.wav"
+                                    inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{new_root}{new_octave}.wav"
                                     inv_chord_path = os.path.join(
                                         inversions_dir, inv_chord_filename
                                     )
@@ -1130,7 +1132,7 @@ def generate_chords(
                                     )
 
                                     # Save the inverted chord with inversion number in filename using the original chord audio as fallback
-                                    inv_chord_filename = f"{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
+                                    inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
                                     inv_chord_path = os.path.join(
                                         inversions_dir, inv_chord_filename
                                     )
@@ -1246,7 +1248,9 @@ def generate_chords(
                                 new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
 
                             # Save the pitch-shifted chord
-                            chord_filename = f"{safe_chord_name}-{note}{octave}.wav"
+                            chord_filename = (
+                                f"{prefix}-{safe_chord_name}-{note}{octave}.wav"
+                            )
                             chord_path = os.path.join(quality_dir, chord_filename)
                             sf.write(chord_path, new_audio, sr)
 
@@ -1260,7 +1264,7 @@ def generate_chords(
                                 for inv_num, inv_semitones in inversions:
                                     # For pitch-shifted chords, we need to use the same approach
                                     # Instead of generating from scratch, pitch-shift the chord we just created
-                                    inv_chord_filename = f"{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
+                                    inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
                                     inv_chord_path = os.path.join(
                                         inversions_dir, inv_chord_filename
                                     )
@@ -2200,7 +2204,7 @@ def generate_full_chord_samples(chord_dir, prefix):
             os.makedirs(quality_dir)
 
         # Save the combined audio with embedded slice markers
-        output_filename = f"{safe_chord_type}.wav"
+        output_filename = f"{prefix}-{safe_chord_type}.wav"
         output_path = os.path.join(quality_dir, output_filename)
 
         # First save the audio data using soundfile
@@ -2335,7 +2339,7 @@ def generate_full_chord_samples(chord_dir, prefix):
             os.makedirs(inversions_dir)
 
         # Save the combined audio with embedded slice markers
-        output_filename = f"{safe_chord_type}-{inversion_num}.wav"
+        output_filename = f"{prefix}-{safe_chord_type}-{inversion_num}.wav"
         output_path = os.path.join(inversions_dir, output_filename)
 
         # First save the audio data using soundfile
@@ -2706,16 +2710,11 @@ def interactive_mode():
 
                 # Function to get proper ordinal suffix
                 def get_ordinal_suffix(n):
-                    """Return ordinal suffix for a number (1st, 2nd, 3rd, etc.)."""
-                    if 11 <= n % 100 <= 13:
-                        return f"{n}th"
-                    if n % 10 == 1:
-                        return f"{n}st"
-                    if n % 10 == 2:
-                        return f"{n}nd"
-                    if n % 10 == 3:
-                        return f"{n}rd"
-                    return f"{n}th"
+                    if 10 <= n % 100 <= 20:
+                        suffix = "th"
+                    else:
+                        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+                    return f"{n}{suffix}"
 
                 # Process each chord type individually for more granular control
                 for quality, chord_type, notes_count in sorted(
