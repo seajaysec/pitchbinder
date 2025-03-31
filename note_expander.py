@@ -7,6 +7,7 @@ import re
 import sys
 import threading
 import time
+import traceback
 from typing import Dict, List, Literal, Optional, Union
 
 import librosa
