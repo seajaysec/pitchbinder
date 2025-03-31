@@ -1688,7 +1688,7 @@ def cleanup_artifacts(
                 # Format: filename
                 chord_filename = chord_item
                 # Extract quality from the chord filename or use a default
-                quality_match = re.search(r"-([^-]+)-Full\.wav$", chord_filename)
+                quality_match = re.search(r"-([^-]+)\.wav$", chord_filename)
                 if quality_match:
                     quality = quality_match.group(1)
                 else:
