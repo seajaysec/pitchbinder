@@ -998,7 +998,7 @@ def generate_chords(
 
             # Create inversions directory if needed
             if generate_inversions:
-                inversions_dir = os.path.join(quality_dir, "inversions")
+                inversions_dir = os.path.join(quality_dir, "inv")
                 if not os.path.exists(inversions_dir):
                     os.makedirs(inversions_dir)
 
@@ -1772,7 +1772,7 @@ def cleanup_artifacts(
 
                 # Create inversions directory if needed
                 if is_inversion:
-                    inversions_dir = os.path.join(quality_dir, "inversions")
+                    inversions_dir = os.path.join(quality_dir, "inv")
                     if not os.path.exists(inversions_dir):
                         os.makedirs(inversions_dir)
                     dest_path = os.path.join(inversions_dir, chord_filename)
@@ -2316,7 +2316,7 @@ def generate_full_chord_samples(chord_dir, prefix):
             os.makedirs(quality_dir)
 
         # Create inversions directory
-        inversions_dir = os.path.join(quality_dir, "inversions")
+        inversions_dir = os.path.join(quality_dir, "inv")
         if not os.path.exists(inversions_dir):
             os.makedirs(inversions_dir)
 
