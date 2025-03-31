@@ -1007,12 +1007,15 @@ def generate_chords(
                         # Generate inversions for this chord if requested
                         if generate_inversions and inversions:
                             for inv_num, inv_semitones in inversions:
-                                # Skip if this inversion is not in the selected inversions
-                                if (
-                                    selected_inversions is not None
-                                    and inv_num not in selected_inversions
-                                ):
-                                    continue
+                                # Skip if this inversion is not in the selected inversions for this chord
+                                if selected_inversions is not None:
+                                    # Check if this chord type has selected inversions
+                                    chord_key = (quality, chord_name)
+                                    if (
+                                        chord_key not in selected_inversions
+                                        or inv_num not in selected_inversions[chord_key]
+                                    ):
+                                        continue
 
                                 try:
                                     # Compute the new root for the inversion based on the original semitones.
