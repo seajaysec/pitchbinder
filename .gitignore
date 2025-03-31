@@ -55,3 +55,4 @@ build/
 # Custom
 *-00-Full.*
 test/
+*.old
