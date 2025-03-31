@@ -1718,27 +1718,31 @@ def create_cue_chunk(cue_positions):
 def cleanup_artifacts(output_dir, chord_dirs=None, full_chord_filenames=None):
     """Cleanup temporary files and organize the final output."""
     print_header("Cleaning up and organizing final output")
-    
+
     # Create exp/chords directory to copy chord files to
     chords_dir = os.path.join(output_dir, "chords")
     if not os.path.exists(chords_dir):
         os.makedirs(chords_dir)
-    
+
     # Copy chord files to their respective quality directories in exp/chords
     if full_chord_filenames and chord_dirs:
-        print_info(f"Found {len(full_chord_filenames)} chord files to copy to {chords_dir}")
+        print_info(
+            f"Found {len(full_chord_filenames)} chord files to copy to {chords_dir}"
+        )
         success_count = 0
-        
+
         # Helper function to find a file by trying different path formats
         def find_chord_file(chord_item, chord_dirs):
             paths_to_try = []
-            
+
             if isinstance(chord_item, tuple):
                 # Handle tuple format (quality, subdir?, filename)
                 if len(chord_item) == 3:
                     quality, subdir, filename = chord_item
                     for chord_dir in chord_dirs:
-                        paths_to_try.append(os.path.join(chord_dir, quality, subdir, filename))
+                        paths_to_try.append(
+                            os.path.join(chord_dir, quality, subdir, filename)
+                        )
                 else:
                     quality, filename = chord_item
                     for chord_dir in chord_dirs:
@@ -1748,12 +1752,12 @@ def cleanup_artifacts(output_dir, chord_dirs=None, full_chord_filenames=None):
                 filename = chord_item
                 for chord_dir in chord_dirs:
                     paths_to_try.append(os.path.join(chord_dir, filename))
-            
+
             # Try all possible paths
             for path in paths_to_try:
                 if os.path.exists(path):
                     return path, filename
-            
+
             # Try secondary fallback paths with different formats
             if isinstance(chord_item, tuple) and len(chord_item) >= 2:
                 quality = chord_item[0]
@@ -1762,51 +1766,60 @@ def cleanup_artifacts(output_dir, chord_dirs=None, full_chord_filenames=None):
                     # Try without subdirectory
                     paths_to_try.append(os.path.join(chord_dir, quality, filename))
                     # Try with chord directory
-                    paths_to_try.append(os.path.join(chord_dir, "chord", quality, filename))
-                
+                    paths_to_try.append(
+                        os.path.join(chord_dir, "chord", quality, filename)
+                    )
+
                 for path in paths_to_try:
                     if os.path.exists(path):
                         return path, filename
-            
+
             return None, None
-            
+
         # Process each chord file
         for chord_item in full_chord_filenames:
             chord_path, filename = find_chord_file(chord_item, chord_dirs)
-            
+
             if chord_path:
                 print_info(f"Found chord file at: {chord_path}")
-                
+
                 # Determine if this is an inversion
                 is_inversion = (
                     "inv" in chord_path
                     or "inversions" in chord_path
                     or ("filename" in locals() and "-stInv-" in filename)
-                    or ("filename" in locals() and re.search(r"-\d+stInv-", filename) is not None)
+                    or (
+                        "filename" in locals()
+                        and re.search(r"-\d+stInv-", filename) is not None
+                    )
                 )
-                
+
                 # Extract quality from chord_item or from chord_path
                 if isinstance(chord_item, tuple) and len(chord_item) >= 1:
                     quality = chord_item[0]
                 else:
                     # Extract quality from the filename or chord_path
-                    quality_match = re.search(r"/([^/]+)/(?:inv|inversions)?/[^/]+\.wav$", chord_path)
+                    quality_match = re.search(
+                        r"/([^/]+)/(?:inv|inversions)?/[^/]+\.wav$", chord_path
+                    )
                     if quality_match:
                         quality = quality_match.group(1)
                     else:
-                        quality_match = re.search(r"-([^-]+)(?:(?:-\d+)?-Full)?\.wav$", 
-                                                os.path.basename(chord_path))
+                        quality_match = re.search(
+                            r"-([^-]+)(?:(?:-\d+)?-Full)?\.wav$",
+                            os.path.basename(chord_path),
+                        )
                         if quality_match:
                             quality = quality_match.group(1)
                         else:
                             quality = "Other"
-                
+
                 # Create quality directory in exp/chords
                 quality_dir = os.path.join(chords_dir, quality)
                 if not os.path.exists(quality_dir):
                     os.makedirs(quality_dir)
                     print_info(f"Created quality directory: {quality_dir}")
-                
+
                 # Create inversions directory if needed
                 dest_dir = quality_dir
                 if is_inversion:
@@ -1815,37 +1828,21 @@ def cleanup_artifacts(output_dir, chord_dirs=None, full_chord_filenames=None):
                         os.makedirs(inversions_dir)
                         print_info(f"Created inversions directory: {inversions_dir}")
                     dest_dir = inversions_dir
-                
+
                 # Get the destination filename (clean up any "-Full" suffix)
                 dest_filename = os.path.basename(chord_path)
                 dest_filename = re.sub(r"(?:-\d+)?-Full(?=\.wav$)", "", dest_filename)
                 dest_path = os.path.join(dest_dir, dest_filename)
-                
+
                 # Copy the file
                 import shutil
+
                 try:
                     shutil.copy2(chord_path, dest_path)
-
-                    shutil.rmtree(target_dir)
-
-                # Add task parameters to list
-                processing_tasks.append(
-                    {
-                        "source_dir": directory,
-                        "target_dir": target_dir,
-                        "prefix": prefix,
-                        "play": False,  # Disable play in parallel mode for safety
-                        "gen_full": options_dict["gen_full"],
-                        "time_match": options_dict["time_match"],
-                        "chords": options_dict["chords"],
-                        "keep_artifacts": options_dict["keep_artifacts"],
-                        "chord_qualities": chord_qualities,
-                        "generate_inversions": generate_inversions,
-                        "selected_chord_types": selected_chord_types,  # Add new parameter
-                        "selected_inversions": selected_inversions,  # Add new parameter
-                        "overwrite": options_dict["overwrite"],
-                    }
-                )
+                    print_success(f"Copied chord file to {dest_path}")
+                    success_count += 1
+                except Exception as e:
+                    print_error(f"Error copying {chord_path} to {dest_path}: {str(e)}")
 
             # Start a heartbeat thread to provide periodic updates on processing status
             heartbeat_stop = threading.Event()
