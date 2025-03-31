@@ -2557,10 +2557,11 @@ def interactive_mode():
 
                 # Get the maximum number of notes for selected chord types
                 max_notes = 3  # Minimum for inversions
-                for quality, types in selected_chord_types.items():
-                    for chord_name, _, semitones, notes_count in CHORD_DEFINITIONS:
-                        if chord_name in types:
-                            max_notes = max(max_notes, notes_count)
+                if selected_chord_types:  # Add check for None
+                    for quality, types in selected_chord_types.items():
+                        for chord_name, _, semitones, notes_count in CHORD_DEFINITIONS:
+                            if chord_name in types:
+                                max_notes = max(max_notes, notes_count)
 
                 # Create choices for inversion numbers with proper ordinal suffixes
                 def get_ordinal_suffix(n):
