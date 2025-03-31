@@ -51,3 +51,7 @@ venv/
 dist/
 build/
 *.log
+
+# Generated full sample files
+*-00-Full.*
+test/
