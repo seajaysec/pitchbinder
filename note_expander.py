@@ -2032,13 +2032,13 @@ def generate_full_chord_samples(chord_dir, prefix):
 
         # Extract chord type and inversion info
         if is_inversion:
-            # Pattern for inversions: prefix-ChordType-InversionNum-NoteOctave.wav -> now prefix-ChordType-InversionNum.wav
-            chord_match = re.search(rf"{prefix}-(.+)-(\d+stInv)\.wav$", filename)
+            # Pattern for inversions: prefix-ShortChordName_invN.wav
+            chord_match = re.search(rf"{prefix}-(.+)_inv(\d+)\.wav$", filename)
             if not chord_match:
                 continue
 
             chord_type = chord_match.group(1)
-            inversion_num = chord_match.group(2)
+            inversion_num = f"{chord_match.group(2)}stInv"  # Keep the stInv suffix for internal tracking
 
             # Create a key for this inversion type
             key = (quality, chord_type, inversion_num)
