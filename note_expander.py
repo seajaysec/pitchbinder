@@ -4,34 +4,102 @@ import csv
 import multiprocessing
 import os
 import re
+import shutil
+import signal
 import sys
 import threading
 import time
+import warnings
+from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import librosa
+import librosa.effects
 import numpy as np
 import psutil
 import questionary
 import sounddevice as sd
 import soundfile as sf
 from colorama import Fore, Style, init
-from questionary import Style as QStyle
-from scipy import signal
+from scipy import signal as scipy_signal
 from tqdm import tqdm
 
-# Initialize colorama
+# Initialize colorama for cross-platform colored terminal output
 init(autoreset=True)
 
-# Define color constants
-INFO = Fore.CYAN
+# Constants for colored output
 SUCCESS = Fore.GREEN
-WARNING = Fore.YELLOW
 ERROR = Fore.RED
+WARNING = Fore.YELLOW
+INFO = Fore.CYAN
 HIGHLIGHT = Fore.MAGENTA
 RESET = Style.RESET_ALL
 
+# Mapping of original chord names to filename-safe shorthand
+CHORD_SHORTHAND = {
+    "Major fifth": "Major5",
+    "Dominant seventh": "Dom7",
+    "Major seventh": "Maj7",
+    "Major sixth": "Maj6",
+    "Dominant Minor ninth": "Dom7b9",
+    "Dominant ninth": "Dom9",
+    "Dominant seventh sharp ninth": "Dom7sharp9",
+    "Lydian": "Lydian",
+    "Major sixth ninth": "Maj6_9",
+    "Major ninth": "Maj9",
+    "Seven six": "Seven6",
+    "Augmented eleventh": "Aug11",
+    "Dominant eleventh": "Dom11",
+    "Major eleventh": "Maj11",
+    "Thirteenth flat ninth": "Dom13b9",
+    "Dominant thirteenth": "Dom13",
+    "Major thirteenth": "Maj13",
+    "Minor fifth": "Minor5",
+    "Minor Major seventh": "MinMaj7",
+    "Minor seventh": "Min7",
+    "Minor sixth": "Min6",
+    "Minor ninth": "Min9",
+    "Minor sixth ninth": "Min6_9",
+    "Minor eleventh": "Min11",
+    "Minor thirteenth": "Min13",
+    "Augmented": "Aug",
+    "Augmented Major seventh": "AugMaj7",
+    "Augmented seventh": "Aug7",
+    "Major seventh sharp eleventh": "Maj7sharp11",
+    "Ninth Augmented fifth": "Dom9Aug5",
+    "Diminished": "Dim",
+    "Diminished Major seventh": "DimMaj7",
+    "Diminished seventh": "Dim7",
+    "Half-Diminished seventh": "HalfDim7",
+    "Power chord": "PowerChord",
+    "Augmented sixth Italian": "Italian6",
+    "Augmented sixth French": "French6",
+    "Augmented sixth German": "German6",
+    "Tristan chord": "Tristan",
+    "Suspended": "Sus4",
+    "Seventh suspension four": "7Sus4",
+    "Ninth flat fifth": "Dom9b5",
+    "Thirteenth flat ninth flat fifth": "Dom13b9b5",
+    "Dream chord": "Dream",
+    "Magic chord": "Magic",
+    "Elektra": "Elektra",
+    "So What": "SoWhat",
+    "Petrushka": "Petrushka",
+    "Farben chord": "Farben",
+    "Viennese trichord two forms": "VienneseTri",
+    "Mystic chord": "Mystic",
+    "Ode-to-Napoleon hexachord": "OdeNapoleon",
+    "Northern lights": "NorthernLights",
+}
+
+
+def chord_to_filename(chord_name):
+    """Convert a chord name to a shortened filename-friendly version"""
+    return CHORD_SHORTHAND.get(chord_name, chord_name.replace(" ", ""))
+
+
 # Define questionary custom style
-custom_style = QStyle(
+custom_style = questionary.Style(
     [
         ("qmark", "fg:cyan bold"),  # question mark
         ("question", "fg:white bold"),  # question text
@@ -264,7 +332,7 @@ def pitch_shift_sample(
         # For lower notes, we need to lengthen the sample (slow down)
         new_length = int(len(audio_data) / shift_factor)
         # Ensure we return a numpy array, not a tuple
-        resampled_audio = signal.resample(audio_data, new_length)
+        resampled_audio = scipy_signal.resample(audio_data, new_length)
         return resampled_audio, sr
 
     return audio_data, sr
@@ -507,7 +575,7 @@ def generate_chord(
             # For higher notes, we need to shorten the sample (speed up)
             # For lower notes, we need to lengthen the sample (slow down)
             new_length = int(len(middle_chord_audio) / shift_factor)
-            new_audio = signal.resample(middle_chord_audio, new_length)
+            new_audio = scipy_signal.resample(middle_chord_audio, new_length)
 
             # Time stretching to maintain consistent duration
             current_duration = len(new_audio) / middle_sr
@@ -1123,7 +1191,7 @@ def generate_chords(
                             # For higher notes, we need to shorten the sample (speed up)
                             # For lower notes, we need to lengthen the sample (slow down)
                             new_length = int(len(chord_audio) / shift_factor)
-                            new_audio = signal.resample(chord_audio, new_length)
+                            new_audio = scipy_signal.resample(chord_audio, new_length)
 
                             # Time stretching to maintain consistent duration
                             # First, calculate the current duration
