@@ -2706,11 +2706,16 @@ def interactive_mode():
 
                 # Function to get proper ordinal suffix
                 def get_ordinal_suffix(n):
-                    if 10 <= n % 100 <= 20:
-                        suffix = "th"
-                    else:
-                        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-                    return f"{n}{suffix}"
+                    """Return ordinal suffix for a number (1st, 2nd, 3rd, etc.)."""
+                    if 11 <= n % 100 <= 13:
+                        return f"{n}th"
+                    if n % 10 == 1:
+                        return f"{n}st"
+                    if n % 10 == 2:
+                        return f"{n}nd"
+                    if n % 10 == 3:
+                        return f"{n}rd"
+                    return f"{n}th"
 
                 # Process each chord type individually for more granular control
                 for quality, chord_type, notes_count in sorted(
