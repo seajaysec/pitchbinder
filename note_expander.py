@@ -2544,13 +2544,16 @@ def interactive_mode():
         "Select additional options:",
         choices=[
             questionary.Choice(
-                "Generate a single WAV file with all notes in sequence", "gen_full"
+                "Generate a single WAV file with all notes in sequence",
+                "gen_full",
+                checked=True,
             ),
             questionary.Choice(
                 "Match all generated samples to the average length of source samples",
                 "time_match",
+                checked=True,
             ),
-            questionary.Choice("Generate chord samples", "chords"),
+            questionary.Choice("Generate chord samples", "chords", checked=True),
             questionary.Choice("Play all notes when done", "play"),
             questionary.Choice("Overwrite existing expansion directories", "overwrite"),
             questionary.Choice(
