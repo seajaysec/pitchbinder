@@ -1754,7 +1754,9 @@ def cleanup_artifacts(
                 # Format: filename
                 chord_filename = chord_item
                 # Extract quality from the chord filename or use a default
-                quality_match = re.search(r"-([^-]+)(?:-Full)?\.wav$", chord_filename)
+                quality_match = re.search(
+                    r"-([^-]+)(?:(?:-\d+)?-Full)?\.wav$", chord_filename
+                )
                 if quality_match:
                     quality = quality_match.group(1)
                 else:
@@ -1764,9 +1766,10 @@ def cleanup_artifacts(
             if os.path.exists(chord_path):
                 # Determine if this is an inversion
                 is_inversion = (
-                    "inv" in chord_path
-                    or "-stInv-" in chord_filename
-                    or "inversions" in chord_path
+                    ("inv" in chord_path)
+                    or ("inversions" in chord_path)
+                    or ("-stInv-" in chord_filename)
+                    or ("-\d+stInv-" in chord_filename)
                 )
 
                 # Create quality directory in exp/chords
@@ -1781,11 +1784,15 @@ def cleanup_artifacts(
                         os.makedirs(inversions_dir)
 
                     # Modify the chord filename to remove any "-Full" suffix for the destination
-                    clean_filename = re.sub(r"-Full(?=\.wav$)", "", chord_filename)
+                    clean_filename = re.sub(
+                        r"(?:-\d+)?-Full(?=\.wav$)", "", chord_filename
+                    )
                     dest_path = os.path.join(inversions_dir, clean_filename)
                 else:
                     # Modify the chord filename to remove any "-Full" suffix for the destination
-                    clean_filename = re.sub(r"-Full(?=\.wav$)", "", chord_filename)
+                    clean_filename = re.sub(
+                        r"(?:-\d+)?-Full(?=\.wav$)", "", chord_filename
+                    )
                     dest_path = os.path.join(quality_dir, clean_filename)
 
                 # Copy the file
