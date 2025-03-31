@@ -2,10 +2,6 @@
 
 A powerful tool for expanding a small set of samples into a complete 8-octave range, as well as any associated chords and inversions you'd like. Output is pre-sliced per root note, with full compatibility for the Dirtywave M8 and OcenAudio.
 
-## Overview
-
-Pitchbinder takes a few samples with note information in their filenames and intelligently generates the missing notes across the full 8 octave range (C1-B8). It uses high-quality pitch shifting and optional time stretching to create natural-sounding samples for all 88 keys.
-
 ## Features
 
 - **Intelligent Sample Generation**: Creates missing notes based on your existing samples.
