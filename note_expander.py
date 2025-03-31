@@ -391,6 +391,71 @@ CHORD_DEFINITIONS = [
     ("Northern lights", "Atonal", [1, 2, 8, 12, 15, 18, 19, 22, 23, 28, 31], 11),
 ]
 
+# Mapping of original chord names to filename-safe shorthand
+CHORD_SHORTHAND = {
+    "Major fifth": "Major5",
+    "Dominant seventh": "Dom7",
+    "Major seventh": "Maj7",
+    "Major sixth": "Maj6",
+    "Dominant Minor ninth": "Dom7b9",
+    "Dominant ninth": "Dom9",
+    "Dominant seventh sharp ninth": "Dom7sharp9",
+    "Lydian": "Lydian",
+    "Major sixth ninth": "Maj6_9",
+    "Major ninth": "Maj9",
+    "Seven six": "Seven6",
+    "Augmented eleventh": "Aug11",
+    "Dominant eleventh": "Dom11",
+    "Major eleventh": "Maj11",
+    "Thirteenth flat ninth": "Dom13b9",
+    "Dominant thirteenth": "Dom13",
+    "Major thirteenth": "Maj13",
+    "Minor fifth": "Minor5",
+    "Minor Major seventh": "MinMaj7",
+    "Minor seventh": "Min7",
+    "Minor sixth": "Min6",
+    "Minor ninth": "Min9",
+    "Minor sixth ninth": "Min6_9",
+    "Minor eleventh": "Min11",
+    "Minor thirteenth": "Min13",
+    "Augmented": "Aug",
+    "Augmented Major seventh": "AugMaj7",
+    "Augmented seventh": "Aug7",
+    "Major seventh sharp eleventh": "Maj7sharp11",
+    "Ninth Augmented fifth": "Dom9Aug5",
+    "Diminished": "Dim",
+    "Diminished Major seventh": "DimMaj7",
+    "Diminished seventh": "Dim7",
+    "Half-Diminished seventh": "HalfDim7",
+    "Power chord": "PowerChord",
+    "Augmented sixth Italian": "Italian6",
+    "Augmented sixth French": "French6",
+    "Augmented sixth German": "German6",
+    "Tristan chord": "Tristan",
+    "Suspended": "Sus4",
+    "Seventh suspension four": "7Sus4",
+    "Ninth flat fifth": "Dom9b5",
+    "Thirteenth flat ninth flat fifth": "Dom13b9b5",
+    "Dream chord": "Dream",
+    "Magic chord": "Magic",
+    "Elektra": "Elektra",
+    "So What": "SoWhat",
+    "Petrushka": "Petrushka",
+    "Farben chord": "Farben",
+    "Viennese trichord two forms": "VienneseTri",
+    "Mystic chord": "Mystic",
+    "Ode-to-Napoleon hexachord": "OdeNapoleon",
+    "Northern lights": "NorthernLights",
+}
+
+
+def chord_to_filename(chord_name, inversion=None):
+    """Convert a chord name to a short filename, optionally with inversion number."""
+    shorthand = CHORD_SHORTHAND.get(chord_name, chord_name.replace(" ", ""))
+    if inversion is not None:
+        shorthand += f"_inv{inversion}"
+    return shorthand
+
 
 def get_note_from_semitone(root_note, root_octave, semitone_offset):
     """Get the note and octave given a root note and semitone offset."""
