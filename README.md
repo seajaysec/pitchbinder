@@ -12,6 +12,7 @@ A powerful tool for expanding a small set of samples into a complete 8-octave ra
 - **Recursive Processing**: Process multiple directories at once.
 - **Playback**: Option to play all generated notes in sequence after processing.
 - **Interactive Interface**: User-friendly questionary-based interface for all options.
+- **Enhanced Chord Generation**: Fine-grained control over chord types and inversions (new in v1.1).
 
 ## How It Works
 
@@ -47,13 +48,13 @@ The interactive interface will guide you through all available options:
 - Setting a custom prefix for generated files
 - Generating a full sample file with all notes
 - Time matching samples
-- Generating chord samples
+- Generating chord samples with fine-grained control
 - Playing all notes when done
 - Overwriting existing expansion directories
 
 ## Interactive Interface Guide
 
-The note-expander uses a questionary-based interactive interface that guides you through the process. Here's a step-by-step walkthrough:
+The Pitchbinder uses a questionary-based interactive interface that guides you through the process. Here's a step-by-step walkthrough:
 
 1. **Source Directory Selection**
    ```
@@ -64,73 +65,107 @@ The note-expander uses a questionary-based interactive interface that guides you
    - The tool will scan and report how many WAV files it found
 
 2. **Recursive Processing**
-   ```
-   Process all subdirectories recursively? (y/n)
-   ```
-   - Choose 'y' to process all subdirectories containing samples
-   - Choose 'n' to only process the main directory
+   Recursive processing is enabled by default to process all subdirectories.
 
 3. **Custom Prefix**
    ```
    Use a custom prefix for generated files? (Otherwise auto-detect) (y/n)
    ```
-   - If you select 'y', you'll be prompted to enter a custom prefix
-   - If you select 'n', the prefix will be automatically detected from your existing samples
+   - If you select this option, you'll be prompted to enter a custom prefix
+   - If not selected, the prefix will be automatically detected from your existing samples
 
 4. **Additional Options**
    ```
    Select additional options:
-   > [ ] Generate a single WAV file with all notes in sequence
-     [ ] Match all generated samples to the average length of source samples
-     [ ] Generate chord samples
+   > [x] Generate a single WAV file with all notes in sequence
+     [x] Match all generated samples to the average length of source samples
+     [x] Generate chord samples
      [ ] Play all notes when done
      [ ] Overwrite existing expansion directories
      [ ] Keep all generated files (don't clean up artifacts)
+     [ ] Use a custom prefix for generated files (Otherwise auto-detect)
+     [ ] Set custom number of parallel workers
    ```
    - Use arrow keys to navigate
    - Press Space to select/deselect options
    - Press Enter when done
    
-5. **Chord Generation (if selected)**
-   
-   If you selected "Generate chord samples", you'll see additional prompts:
-   
-   a. **Chord Generation Mode**
+5. **Pitch Shifting Method**
    ```
-   How would you like to generate chords?
-   > Generate all chord types
-     Select specific chord qualities
+   Which pitch shifting method would you like to use?
+   > both (recommended for best quality)
+     standard (faster, more consistent)
+     granular (better for extreme shifts)
    ```
    
-   b. **Chord Qualities (if "Select specific chord qualities" is chosen)**
+6. **Enhanced Chord Generation (new in v1.1)**
+   
+   If you selected "Generate chord samples", you'll see the improved interface:
+   
+   a. **Chord Qualities Selection**
    ```
-   Select chord qualities to generate:
-   > [ ] Major
-     [ ] Minor
-     [ ] Diminished
-     [ ] Augmented
-     [ ] Suspended
+   Which chord qualities would you like to generate?
+   > [x] Major
+     [x] Minor
+     [x] Diminished
+     [x] Augmented
+     [x] Suspended
      ...
    ```
    
-   c. **Inversions**
+   b. **Specific Chord Types Selection**
    ```
-   Generate chord inversions? (This will create all possible inversions for each chord) (y/n)
+   Would you like to select specific chord types within these qualities? (y/n)
    ```
+   
+   If yes:
+   ```
+   Which Major chord types would you like to generate?
+   > [x] Major fifth
+     [x] Major sixth
+     [x] Major seventh
+     ...
+   ```
+   
+   c. **Inversions Control**
+   ```
+   Would you also like to generate chord inversions? (y/n)
+   ```
+   
+   If yes:
+   ```
+   Generate all possible inversions for each chord? (y/n)
+   ```
+   
+   If not generating all inversions:
+   ```
+   Select inversions for Major seventh (Major) - 4-note chord:
+   > [x] 1st
+     [x] 2nd
+     [x] 3rd
+   ```
+   
+   This granular selection allows you to precisely control which chord types and inversions are generated.
 
-6. **Review and Confirm Settings**
+7. **Review and Confirm Settings**
 
    The tool will display a summary of your selected settings:
    ```
    Your selected settings:
    Source directory: /path/to/your/samples/
-   Recursive mode: False
+   Recursive mode: True
+   Parallel processing: Yes (8 workers)
    Custom prefix: Auto-detect
    Generate full sample: True
    Time match: True
    Generate chords: True
+   Pitch shift method: both
    Chord qualities: Major, Minor
+   Selected specific chord types:
+     Major: Major fifth, Major seventh
+     Minor: Minor fifth, Minor seventh
    Generate inversions: True
+   Selected inversions for Major seventh: 1st, 2nd
    Play notes: False
    Overwrite existing: False
    Keep artifacts: False
@@ -141,7 +176,7 @@ The note-expander uses a questionary-based interactive interface that guides you
    - Review the settings and confirm to proceed
    - If you select 'n', the process will be canceled
 
-7. **Processing**
+8. **Processing**
 
    Once confirmed, the tool will begin processing your samples:
    - It will create an "expansion" directory within your source directory
@@ -166,3 +201,15 @@ When generating a full sample file, a single WAV file containing all notes in se
 
 - The quality of pitch-shifted samples decreases as they get further from the source sample.
 - Very extreme pitch shifts (e.g., shifting a C1 to a C8) may not sound natural.
+
+## Changelog
+
+### v1.1
+- Renamed from "note_expander" to "Pitchbinder"
+- Completely redesigned chord generation interface
+- Added granular control over chord types and inversions:
+  - Select specific chord qualities (Major, Minor, etc.)
+  - Select specific chord types within each quality
+  - Select specific inversions for each chord type
+- Improved organization of generated chords
+- Optimized processing workflow
