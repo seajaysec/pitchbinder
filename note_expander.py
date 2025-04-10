@@ -3,6 +3,7 @@ import concurrent.futures
 import csv
 import multiprocessing
 import os
+import random
 import re
 import shutil
 import signal
@@ -94,7 +95,7 @@ CHORD_SHORTHAND = {
 
 
 def chord_to_filename(chord_name):
-    """Convert a chord name to a shortened filename-friendly version"""
+    """Convert a chord name to a shortened filename-safe version"""
     return CHORD_SHORTHAND.get(chord_name, chord_name.replace(" ", ""))
 
 
@@ -248,157 +249,351 @@ def parse_note_from_filename(filename):
         # Special case for Cb which is actually B in the previous octave
         if flat_note == "Cb":
             return "B", int(octave) - 1
-
-        # Return the equivalent sharp note
-        return flat_to_sharp[flat_note], int(octave)
+        else:
+            return flat_to_sharp.get(flat_note, flat_note), int(octave)
 
     return None, None
 
 
 def get_note_frequency(note, octave):
-    """
-    Calculate the frequency of a note based on its name and octave.
-    A4 (440 Hz) is used as the reference.
-    """
-    notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-
-    # Handle flat notes by converting to their sharp equivalents
-    if note.endswith("b"):
-        flat_to_sharp = {
-            "Cb": "B",
-            "Db": "C#",
-            "Eb": "D#",
-            "Fb": "E",
-            "Gb": "F#",
-            "Ab": "G#",
-            "Bb": "A#",
-        }
-        if note in flat_to_sharp:
-            note = flat_to_sharp[note]
-            if note == "B":  # Special case: Cb is B in the previous octave
-                octave -= 1
-
-    # A4 is the reference note at 440 Hz
+    """Convert a note and octave to its frequency in Hz."""
+    # Define base frequencies for A4
     A4_FREQ = 440.0
-    A4_NOTE_INDEX = notes.index("A")
+    A4_NOTE = "A"
     A4_OCTAVE = 4
 
-    # Calculate the number of semitones from A4
-    note_index = notes.index(note)
-    semitones_from_a4 = (octave - A4_OCTAVE) * 12 + (note_index - A4_NOTE_INDEX)
+    # Map note to semitone offset from C (C=0, C#=1, D=2, etc.)
+    NOTE_TO_SEMITONE = {
+        "C": 0,
+        "C#": 1,
+        "D": 2,
+        "D#": 3,
+        "E": 4,
+        "F": 5,
+        "F#": 6,
+        "G": 7,
+        "G#": 8,
+        "A": 9,
+        "A#": 10,
+        "B": 11,
+    }
 
-    # Calculate the frequency using the equal temperament formula
-    # f = f_ref * 2^(n/12) where n is the number of semitones from the reference note
-    frequency = A4_FREQ * (2 ** (semitones_from_a4 / 12))
+    # Calculate semitone distance from A4
+    semitone_offset_from_A4 = (octave - A4_OCTAVE) * 12 + (
+        NOTE_TO_SEMITONE[note] - NOTE_TO_SEMITONE[A4_NOTE]
+    )
 
+    # Calculate frequency using equal temperament formula
+    frequency = A4_FREQ * (2 ** (semitone_offset_from_A4 / 12))
     return frequency
 
 
 def get_all_wav_files(directory="."):
-    """Get all WAV files in the specified directory."""
-    # Exclude files with -00-Full in the filename
-    wav_files = [
-        f
-        for f in os.listdir(directory)
-        if f.lower().endswith(".wav") and "-00-Full" not in f
-    ]
-
-    # Debug: Print the notes found in each file
-    if wav_files:
-        print_info(f"Found {len(wav_files)} WAV files in {directory}")
-        for wav_file in wav_files:
-            note, octave = parse_note_from_filename(wav_file)
-            if note and octave:
-                print_info(f"  Detected {note}{octave} in file: {wav_file}")
-            else:
-                print_warning(f"  Could not detect note in file: {wav_file}")
-
+    """Get all WAV files in a directory and its subdirectories."""
+    wav_files = []
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            if file.lower().endswith(".wav"):
+                if root == directory:
+                    wav_files.append(file)
+                else:
+                    # Include the subdirectory in the path
+                    subdir = os.path.relpath(root, directory)
+                    wav_files.append(os.path.join(subdir, file))
     return wav_files
 
 
 def pitch_shift_sample(
     audio_data, sr, source_note, source_octave, target_note, target_octave
 ):
-    """Pitch shift a sample from source note to target note."""
+    """Pitch shift a sample from source note to target note using resampling."""
+    # Calculate the frequency ratio
     source_freq = get_note_frequency(source_note, source_octave)
     target_freq = get_note_frequency(target_note, target_octave)
+    ratio = target_freq / source_freq
 
-    # Calculate pitch shift factor
-    shift_factor = target_freq / source_freq
+    # For small shifts, use librosa's implementation
+    if 0.5 <= ratio <= 2.0:
+        n_steps = 12 * np.log2(ratio)
+        return librosa.effects.pitch_shift(audio_data, sr=sr, n_steps=n_steps), sr
+    else:
+        # For larger shifts, use resampling
+        new_length = int(len(audio_data) / ratio)
+        return scipy_signal.resample(audio_data, new_length), sr
 
-    # Resample the audio
-    if shift_factor != 1.0:
-        # For higher notes, we need to shorten the sample (speed up)
-        # For lower notes, we need to lengthen the sample (slow down)
-        new_length = int(len(audio_data) / shift_factor)
-        # Ensure we return a numpy array, not a tuple
-        resampled_audio = scipy_signal.resample(audio_data, new_length)
-        return resampled_audio, sr
 
-    return audio_data, sr
+def granular_pitch_shift(
+    audio_data,
+    sr,
+    source_note,
+    source_octave,
+    target_note,
+    target_octave,
+    grain_size_ms=50,
+    grain_overlap=0.5,
+    pitch_jitter=0.005,
+):
+    """Pitch shift a sample using granular synthesis for higher quality results.
+
+    Args:
+        audio_data: Input audio data as numpy array
+        sr: Sample rate
+        source_note: Source note (e.g., 'C', 'D#')
+        source_octave: Source octave (integer)
+        target_note: Target note
+        target_octave: Target octave
+        grain_size_ms: Grain size in milliseconds
+        grain_overlap: Overlap factor between grains (0-1)
+        pitch_jitter: Small random variation in pitch to reduce artifacts
+
+    Returns:
+        Pitch-shifted audio and sample rate
+    """
+    # Check if the audio data is empty
+    if len(audio_data) == 0:
+        print_warning("  Empty audio data provided to granular pitch shifter")
+        return np.zeros(0), sr
+
+    # Check if audio is stereo (has 2 channels)
+    is_stereo = len(audio_data.shape) > 1 and audio_data.shape[1] == 2
+
+    # Convert stereo to mono for processing if needed
+    if is_stereo:
+        print_info("  Converting stereo to mono for granular processing")
+        # Average the channels
+        audio_mono = np.mean(audio_data, axis=1)
+    else:
+        audio_mono = audio_data
+
+    # Calculate frequency ratio based on notes
+    source_freq = get_note_frequency(source_note, source_octave)
+    target_freq = get_note_frequency(target_note, target_octave)
+    pitch_ratio = target_freq / source_freq
+
+    # For extreme pitch shifts (more than 3 octaves), use a safer approach
+    if pitch_ratio > 8.0 or pitch_ratio < 0.125:
+        print_warning(
+            f"  Extreme pitch shift detected ({pitch_ratio:.2f}). Using standard method."
+        )
+        # Fall back to standard method for extreme shifts
+        if is_stereo:
+            # For stereo, convert back to mono for pitch shifting
+            shifted_audio, sr = pitch_shift_sample(
+                audio_mono, sr, source_note, source_octave, target_note, target_octave
+            )
+            # Convert back to stereo
+            output_stereo = np.zeros((len(shifted_audio), 2))
+            output_stereo[:, 0] = shifted_audio
+            output_stereo[:, 1] = shifted_audio
+            return output_stereo, sr
+        else:
+            return pitch_shift_sample(
+                audio_mono, sr, source_note, source_octave, target_note, target_octave
+            )
+
+    # Convert grain size from ms to samples
+    grain_size = int(sr * grain_size_ms / 1000)
+    if grain_size <= 0:
+        grain_size = 1  # Ensure grain size is at least 1 sample
+
+    # Calculate hop size based on overlap
+    hop_size = int(grain_size * (1 - grain_overlap))
+    if hop_size <= 0:
+        hop_size = 1  # Ensure hop size is at least 1 sample
+
+    # Create output buffer (estimate size based on pitch ratio)
+    output_length = int(len(audio_mono) / pitch_ratio)
+    if output_length <= 0:
+        # For extreme pitch shifts, ensure we have at least some output
+        output_length = sr  # Default to 1 second of audio
+
+    output = np.zeros(output_length + grain_size * 2)
+
+    # Create hanning window for grains
+    window = np.hanning(grain_size)
+
+    # Initialize read and write positions
+    read_pos = 0
+    write_pos = 0
+
+    # Process grains
+    while read_pos + grain_size < len(audio_mono):
+        # Extract grain
+        if read_pos + grain_size <= len(audio_mono):
+            grain = audio_mono[read_pos : read_pos + grain_size].copy()
+        else:
+            # Pad with zeros if we're at the end
+            grain = np.zeros(grain_size)
+            grain[: len(audio_mono) - read_pos] = audio_mono[read_pos:]
+
+        # Apply window to grain
+        grain = grain * window
+
+        # Add slight random pitch variation to reduce artifacts
+        current_pitch = pitch_ratio * (1 + random.uniform(-pitch_jitter, pitch_jitter))
+
+        # Calculate new grain length, ensuring it's at least 1 sample
+        grain_new_length = max(1, int(grain_size / current_pitch))
+
+        # Resample grain to target pitch
+        # Resample grain to target pitch
+        grain_new_length = int(grain_size / current_pitch)
+        grain_shifted = scipy_signal.resample(grain, grain_new_length)
+
+        # Apply window to resampled grain
+        grain_window = np.hanning(len(grain_shifted))
+        grain_shifted = grain_shifted * grain_window
+
+        # Add grain to output with overlap
+        if write_pos + len(grain_shifted) <= len(output):
+            output[write_pos : write_pos + len(grain_shifted)] += grain_shifted
+        else:
+            # Handle case where grain would go past the end
+            remaining = len(output) - write_pos
+            output[write_pos:] += grain_shifted[:remaining]
+
+        # Update positions
+        read_pos += hop_size
+        write_pos += int(hop_size / pitch_ratio)
+
+    # Trim any extra zeros at the end and normalize
+    output = output[:output_length]
+
+    # Normalize to prevent clipping
+    if np.max(np.abs(output)) > 0:
+        output = output / np.max(np.abs(output)) * 0.95
+
+    # If original was stereo, convert back to stereo
+    if is_stereo:
+        print_info("  Converting mono result back to stereo")
+        # Create stereo output with the same signal in both channels
+        output_stereo = np.zeros((len(output), 2))
+        output_stereo[:, 0] = output
+        output_stereo[:, 1] = output
+        return output_stereo, sr
+
+    return output, sr
+
+
+def granular_time_stretch(
+    audio_data, sr, stretch_factor, grain_size_ms=50, grain_overlap=0.75
+):
+    """Time stretch audio using granular synthesis.
+
+    Args:
+        audio_data: Input audio data
+        sr: Sample rate
+        stretch_factor: Factor by which to stretch (>1 = longer, <1 = shorter)
+        grain_size_ms: Grain size in milliseconds
+        grain_overlap: Overlap factor between grains (0-1)
+
+    Returns:
+        Time-stretched audio data
+    """
+    # Check if audio is stereo (has 2 channels)
+    is_stereo = len(audio_data.shape) > 1 and audio_data.shape[1] == 2
+
+    # Convert stereo to mono for processing if needed
+    if is_stereo:
+        print_info("  Converting stereo to mono for granular time stretching")
+        # Average the channels
+        audio_mono = np.mean(audio_data, axis=1)
+    else:
+        audio_mono = audio_data
+
+    # Convert grain size from ms to samples
+    grain_size = int(sr * grain_size_ms / 1000)
+
+    # Calculate hop size based on overlap
+    hop_size = int(grain_size * (1 - grain_overlap))
+
+    # Adjust hop size for stretch factor (smaller hops = longer output)
+    output_hop = int(hop_size / stretch_factor)
+
+    # Create output buffer
+    output_length = int(len(audio_mono) * stretch_factor) + grain_size
+    output = np.zeros(output_length)
+
+    # Create window function for grains
+    window = np.hanning(grain_size)
+
+    # Process grains
+    pos = 0
+    output_pos = 0
+
+    while pos + grain_size <= len(audio_mono):
+        # Extract and window the grain
+        grain = audio_mono[pos : pos + grain_size] * window
+
+        # Add grain to output
+        if output_pos + grain_size <= len(output):
+            output[output_pos : output_pos + grain_size] += grain
+        else:
+            # Handle end case
+            remaining = len(output) - output_pos
+            output[output_pos:] += grain[:remaining]
+
+        # Move to next position
+        pos += hop_size
+        output_pos += output_hop
+
+    # Trim excess and normalize
+    if stretch_factor > 1.0:
+        # For stretching, keep the full length
+        actual_length = int(len(audio_mono) * stretch_factor)
+    else:
+        # For shortening, we need a more precise length
+        actual_length = int(len(audio_mono) * stretch_factor)
+
+    # Ensure we don't try to return more samples than we have
+    actual_length = min(actual_length, len(output))
+    output = output[:actual_length]
+
+    # Normalize to prevent clipping
+    if np.max(np.abs(output)) > 0:
+        output = output / np.max(np.abs(output)) * 0.95
+
+    # If original was stereo, convert back to stereo
+    if is_stereo:
+        print_info("  Converting mono result back to stereo")
+        # Create stereo output with the same signal in both channels
+        output_stereo = np.zeros((len(output), 2))
+        output_stereo[:, 0] = output
+        output_stereo[:, 1] = output
+        return output_stereo
+
+    return output
 
 
 def find_closest_sample(target_note, target_octave, existing_samples):
-    """Find the closest existing sample to use as a source."""
-    notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    """Find the closest available sample to the target note."""
+    if not existing_samples:
+        return None, None, None
 
-    # Debug information
-    print_info(f"Finding closest sample for {target_note}{target_octave}")
-    print_info(f"Available samples: {len(existing_samples)}")
+    # Initialize with a large distance
+    best_distance = float("inf")
+    closest_file = None
+    closest_note = None
+    closest_octave = None
 
-    # First, check if we're looking for an extreme octave (very high or very low)
-    # If so, we'll limit our search to the available octaves
-    available_octaves = set()
-    for sample in existing_samples:
-        note, octave = parse_note_from_filename(sample)
+    for file in existing_samples:
+        # Extract note and octave from the filename
+        note, octave = parse_note_from_filename(file)
         if note and octave:
-            available_octaves.add(octave)
-
-    print_info(f"Available octaves: {sorted(available_octaves)}")
-
-    # If target octave is outside available range, adjust it to the closest available
-    if target_octave not in available_octaves and available_octaves:
-        original_octave = target_octave
-        if target_octave > max(available_octaves):
-            target_octave = max(available_octaves)
-        elif target_octave < min(available_octaves):
-            target_octave = min(available_octaves)
-        print_info(
-            f"Adjusted target octave from {original_octave} to {target_octave} (available range)"
-        )
-
-    target_index = notes.index(target_note) + (target_octave * 12)
-
-    closest_sample = None
-    min_distance = float("inf")
-    exact_match = None
-
-    for sample in existing_samples:
-        note, octave = parse_note_from_filename(sample)
-        if note and octave:
-            # Check for exact match first (accounting for enharmonic equivalents)
-            if octave == target_octave:
-                if note == target_note:
-                    # Direct match
-                    exact_match = sample
-                    print_info(f"Found exact match: {sample}")
-                    break
-
             # Calculate semitone distance
-            sample_index = notes.index(note) + (octave * 12)
-            distance = abs(target_index - sample_index)
+            source_freq = get_note_frequency(note, octave)
+            target_freq = get_note_frequency(target_note, target_octave)
+            # Use log frequency ratio as distance metric to better represent
+            # perceptual distance in semitones
+            distance = abs(np.log2(target_freq / source_freq) * 12)
 
-            if distance < min_distance:
-                min_distance = distance
-                closest_sample = sample
-                print_info(
-                    f"New closest sample: {sample} (distance: {distance} semitones)"
-                )
+            if distance < best_distance:
+                best_distance = distance
+                closest_file = file
+                closest_note = note
+                closest_octave = octave
 
-    # Return exact match if found, otherwise closest sample
-    result = exact_match if exact_match else closest_sample
-    print_info(f"Selected sample: {result}")
-    return result
+    return closest_file, closest_note, closest_octave
 
 
 # Update chord definitions to match Chords.csv format exactly
@@ -527,364 +722,238 @@ def generate_chord(
     target_dir,
     prefix,
     chord_duration_factor=4.0,
+    pitch_shift_method="standard",
 ):
     """Generate a chord sample by mixing multiple note samples."""
-    notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    # Create target directory if it doesn't exist
+    if not os.path.exists(target_dir):
+        os.makedirs(target_dir)
 
-    # Print information about the chord we're generating
+    # Convert semitones to note names and octaves
+    chord_notes = []
+    for semitone in semitones:
+        note, octave = get_note_from_semitone(root_note, root_octave, semitone)
+        chord_notes.append((note, octave))
+
+    # Sort notes by octave and then within octave for more readable filenames
+    chord_notes.sort(key=lambda x: (x[1], x[0]))
+
+    # Create a descriptive filename for the chord
+    chord_notes_str = "-".join([f"{note}{octave}" for note, octave in chord_notes])
+    chord_filename = f"{prefix}-{root_note}{root_octave}_chord_{chord_notes_str}.wav"
+    output_path = os.path.join(target_dir, chord_filename)
+
+    # Skip if the file already exists
+    if os.path.exists(output_path):
+        print_info(f"Chord {chord_filename} already exists, skipping...")
+        return None, None
+
     print_info(
-        f"Generating chord with root {root_note}{root_octave} and semitones {semitones}"
+        f"Generating chord with root {root_note}{root_octave}: {chord_notes_str}"
     )
 
-    # Check if we're dealing with extreme octaves (1, 5-8)
-    is_extreme_octave = root_octave == 1 or root_octave >= 5
+    # Load and mix the samples
+    mixed_audio = None
+    sr = None
+    max_duration = 0
 
-    # For extreme octaves, we'll use a more reliable approach
-    # We'll generate the chord in a middle octave (3) and then pitch shift it
-    if is_extreme_octave:
-        print_info(f"Using reliable approach for extreme octave {root_octave}")
+    # Determine the middle octave for more consistent blending
+    all_octaves = [octave for _, octave in chord_notes]
+    if all_octaves:
+        middle_octave = (min(all_octaves) + max(all_octaves)) // 2
+    else:
+        middle_octave = 4  # Default fallback
 
-        # Generate the chord in octave 3
-        middle_octave = 3
-        middle_chord_audio, middle_sr = generate_chord(
-            root_note,
-            middle_octave,
-            semitones,
-            all_samples,
-            source_dir,
-            target_dir,
-            prefix,
-            chord_duration_factor,
-        )
+    print_info(f"  Using middle octave {middle_octave} for processing")
 
-        if middle_chord_audio is None:
-            print_error(f"Failed to generate middle octave chord as a base")
-            return None, None
+    # Start by finding the sample in the middle octave with the root note
+    middle_chord_path = None
+    middle_chord_audio = None
+    middle_sr = None
+    max_sr = 0  # Keep track of the highest sample rate
 
-        # Calculate the pitch shift factor
-        source_freq = get_note_frequency(root_note, middle_octave)
-        target_freq = get_note_frequency(root_note, root_octave)
-        shift_factor = target_freq / source_freq
+    # Try to find the root note in the middle octave
+    for sample in all_samples:
+        note, octave = parse_note_from_filename(sample)
+        if note == root_note and octave == middle_octave:
+            middle_chord_path = os.path.join(source_dir, sample)
+            break
 
-        print_info(
-            f"Pitch shifting from {root_note}{middle_octave} to {root_note}{root_octave} (factor: {shift_factor:.2f})"
-        )
-
-        # Resample the audio
-        if shift_factor != 1.0:
-            # For higher notes, we need to shorten the sample (speed up)
-            # For lower notes, we need to lengthen the sample (slow down)
-            new_length = int(len(middle_chord_audio) / shift_factor)
-            new_audio = scipy_signal.resample(middle_chord_audio, new_length)
-
-            # Time stretching to maintain consistent duration
-            current_duration = len(new_audio) / middle_sr
-            source_duration = len(middle_chord_audio) / middle_sr
-            stretch_factor = source_duration / current_duration
-
-            # Only apply time stretching if the difference is significant
-            if abs(stretch_factor - 1.0) > 0.01:
-                print_info(
-                    f"Time stretching to match duration (factor: {stretch_factor:.2f})"
-                )
-
-                # For librosa's time_stretch, rate < 1 makes it longer
-                rate = 1.0 / stretch_factor
-
-                # For very short samples, use a smaller n_fft value
-                n_fft = 2048  # Default value
-                if len(new_audio) < n_fft:
-                    n_fft = 2 ** int(np.log2(len(new_audio) - 1))
-                    n_fft = max(32, n_fft)  # Ensure it's not too small
-
-                # Convert to float64 to ensure it's the right type for time_stretch
-                if isinstance(new_audio, tuple):
-                    new_audio_float = new_audio[0].astype(np.float64)
-                else:
-                    new_audio_float = new_audio.astype(np.float64)
-
-                # Apply time stretching
-                new_audio = librosa.effects.time_stretch(
-                    new_audio_float, rate=float(rate), n_fft=n_fft
-                )
-
-                # Apply a gentle envelope to ensure smooth decay
-                envelope = np.ones(len(new_audio))
-                fade_len = min(
-                    int(middle_sr * 0.1), len(new_audio) // 10
-                )  # 100ms fade or 1/10 of length
-
-                # Only apply fade out (keep the attack intact)
-                if fade_len > 0:
-                    envelope[-fade_len:] = np.linspace(1, 0, fade_len)
-
-                new_audio = new_audio * envelope
-
-            # Normalize the final output to prevent clipping
-            if np.max(np.abs(new_audio)) > 0:
-                new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
-
-            return new_audio, middle_sr
-
-        return middle_chord_audio, middle_sr
-
-    # For normal octaves, continue with the original approach
-    # Get the sample rate from the first available sample
-    first_sample = all_samples[0]
-
-    # Check both source and target directories for the first sample
-    first_path = None
-    if os.path.exists(os.path.join(target_dir, first_sample)):
-        first_path = os.path.join(target_dir, first_sample)
-    elif os.path.exists(os.path.join(source_dir, first_sample)):
-        first_path = os.path.join(source_dir, first_sample)
-
-    # If we still can't find the file, try to find any valid sample
-    if not first_path:
+    # If not found, use any sample in the middle octave
+    if middle_chord_path is None:
         for sample in all_samples:
-            if os.path.exists(os.path.join(target_dir, sample)):
-                first_path = os.path.join(target_dir, sample)
-                break
-            elif os.path.exists(os.path.join(source_dir, sample)):
-                first_path = os.path.join(source_dir, sample)
+            note, octave = parse_note_from_filename(sample)
+            if octave == middle_octave:
+                middle_chord_path = os.path.join(source_dir, sample)
                 break
 
-    if not first_path:
+    # If still not found, use the first available sample
+    if middle_chord_path is None and all_samples:
+        middle_chord_path = os.path.join(source_dir, all_samples[0])
+
+    if middle_chord_path:
+        middle_chord_audio, middle_sr = librosa.load(middle_chord_path, sr=None)
+        print_info(
+            f"  Loaded middle octave anchor sample: {os.path.basename(middle_chord_path)}"
+        )
+    else:
         print_error(
-            f"Error: Could not find any valid sample files in {source_dir} or {target_dir}"
+            f"  Could not find a suitable anchor sample. Aborting chord generation."
         )
         return None, None
 
-    # Load the sample to get the sample rate
-    _, sr = librosa.load(first_path, sr=None)
+    # Calculate shift factor - how much we need to shift the sample to get to the root note
+    shift_factor = get_note_frequency(root_note, root_octave) / get_note_frequency(
+        root_note, middle_octave
+    )
 
-    # Initialize an empty array for the mixed audio
-    mixed_audio = None
-    max_length = 0
+    # Resample the audio
+    if shift_factor != 1.0:
+        # Use standard shifting
+        # For higher notes, we need to shorten the sample (speed up)
+        # For lower notes, we need to lengthen the sample (slow down)
+        new_length = int(len(middle_chord_audio) / shift_factor)
+        new_audio = scipy_signal.resample(middle_chord_audio, new_length)
 
-    # Load and process each note in the chord
-    note_audios = []
-    for semitone in semitones:
-        # Get the note and octave for this semitone offset
-        note, octave = get_note_from_semitone(root_note, root_octave, semitone)
+    else:
+        # No shift needed, use the original audio
+        new_audio = middle_chord_audio
 
-        # Find the sample file for this note
-        note_filename = f"{prefix}-{note}{octave}.wav"
+    # Normalize the shifted audio
+    if np.max(np.abs(new_audio)) > 0:
+        new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
 
-        # Debug information
-        print_info(f"Looking for note: {note_filename}")
-        print_info(f"  Checking target dir: {os.path.join(target_dir, note_filename)}")
-        print_info(f"  Checking source dir: {os.path.join(source_dir, note_filename)}")
+    # Set up for mixing
+    chord_audio = new_audio
+    sr = middle_sr
 
-        # Check if the file exists in target directory first, then source
-        note_path = None
-        if os.path.exists(os.path.join(target_dir, note_filename)):
-            note_path = os.path.join(target_dir, note_filename)
-            print_info(f"  Found in target dir: {note_path}")
-        elif os.path.exists(os.path.join(source_dir, note_filename)):
-            note_path = os.path.join(source_dir, note_filename)
-            print_info(f"  Found in source dir: {note_path}")
+    # Extend duration for chord sustain if requested
+    if chord_duration_factor > 1.0:
+        new_length = int(len(chord_audio) * chord_duration_factor)
+        extended_audio = np.zeros(new_length)
+        extended_audio[: len(chord_audio)] = chord_audio
+        # Crossfade to silence
+        fade_start = int(len(chord_audio) * 0.9)
+        fade_length = len(chord_audio) - fade_start
+        for i in range(fade_length):
+            factor = 1.0 - (i / fade_length)
+            extended_audio[fade_start + i] = chord_audio[fade_start + i] * factor
+        chord_audio = extended_audio
+
+    # Now add individual notes
+    for note, octave in chord_notes:
+        # Skip root note as we already have it
+        if note == root_note and octave == root_octave:
+            continue
+
+        print_info(f"  Adding note {note}{octave} to chord")
+
+        # Look for exact match first
+        exact_match = None
+        for sample in all_samples:
+            sample_note, sample_octave = parse_note_from_filename(sample)
+            if sample_note == note and sample_octave == octave:
+                exact_match = sample
+                break
+
+        if exact_match:
+            # Use the exact match file
+            note_path = os.path.join(source_dir, exact_match)
+            audio, note_sr = librosa.load(note_path, sr=None)
+            print_info(f"  Found exact match: {exact_match}")
         else:
-            # If the exact note doesn't exist, find the closest available note
-            print_info(f"  Note not found directly, looking for closest sample")
-            closest_sample = find_closest_sample(note, octave, all_samples)
-            if closest_sample:
-                closest_note, closest_octave = parse_note_from_filename(closest_sample)
-                print_info(
-                    f"  Using closest sample: {closest_sample} ({closest_note}{closest_octave})"
-                )
+            # Find the closest sample
+            closest_file, closest_note, closest_octave = find_closest_sample(
+                note, octave, all_samples
+            )
 
-                # Check if the closest sample exists in target or source directory
-                closest_path = None
-                if os.path.exists(os.path.join(target_dir, closest_sample)):
-                    closest_path = os.path.join(target_dir, closest_sample)
-                    print_info(f"  Found closest sample in target dir: {closest_path}")
-                elif os.path.exists(os.path.join(source_dir, closest_sample)):
-                    closest_path = os.path.join(source_dir, closest_sample)
-                    print_info(f"  Found closest sample in source dir: {closest_path}")
-                else:
-                    print_warning(f"  Closest sample file not found: {closest_sample}")
-                    print_warning(
-                        f"  Checked: {os.path.join(target_dir, closest_sample)}"
-                    )
-                    print_warning(
-                        f"  Checked: {os.path.join(source_dir, closest_sample)}"
-                    )
-                    continue
-
-                try:
-                    # Load the closest sample
-                    if closest_path:  # Ensure path is not None
-                        audio, sr = librosa.load(closest_path, sr=None)
-                        print_info(f"  Successfully loaded closest sample")
-                    else:
-                        print_error(f"  Error: closest_path is None")
-                        continue
-
-                    # Pitch shift to the target note
-                    audio, sr = pitch_shift_sample(
-                        audio, sr, closest_note, closest_octave, note, octave
-                    )
-                    print_info(f"  Successfully pitch-shifted to {note}{octave}")
-
-                    # Trim silence at the beginning to ensure all notes start together
-                    # Ensure audio is a numpy array
-                    if isinstance(audio, tuple):
-                        audio = audio[0]
-
-                    # Convert to float64 for librosa.effects.trim
-                    audio_float = (
-                        audio.astype(np.float64) if hasattr(audio, "astype") else audio
-                    )
-                    audio_trimmed, _ = librosa.effects.trim(
-                        audio_float, top_db=30, frame_length=512, hop_length=128
-                    )
-
-                    # Make sure we're working with a numpy array, not a tuple
-                    if isinstance(audio_trimmed, tuple):
-                        audio = audio_trimmed[
-                            0
-                        ]  # Extract the audio data from the tuple
-                    else:
-                        audio = audio_trimmed
-
-                    note_audios.append(audio)
-                    max_length = max(max_length, len(audio))
-                    print_info(f"  Successfully processed note for chord")
-                    continue
-                except Exception as e:
-                    print_error(f"  Error processing closest sample: {str(e)}")
-                    continue
-            else:
+            if not closest_file:
                 print_warning(
-                    f"  Warning: Could not find a suitable sample for {note}{octave} in chord"
+                    f"  No close sample found for {note}{octave}, skipping this note"
                 )
                 continue
 
-        try:
-            # Load the audio for this note
-            audio, _ = librosa.load(note_path, sr=sr)
-            print_info(f"  Successfully loaded note")
-
-            # Trim silence at the beginning to ensure all notes start together
-            # Ensure audio is a numpy array
-            if isinstance(audio, tuple):
-                audio = audio[0]
-
-            # Convert to float64 for librosa.effects.trim
-            audio_float = (
-                audio.astype(np.float64) if hasattr(audio, "astype") else audio
-            )
-            audio_trimmed, _ = librosa.effects.trim(
-                audio_float, top_db=30, frame_length=512, hop_length=128
+            closest_path = os.path.join(source_dir, closest_file)
+            print_info(
+                f"  Using {closest_file} ({closest_note}{closest_octave}) as source for {note}{octave}"
             )
 
-            # Make sure we're working with a numpy array, not a tuple
-            if isinstance(audio_trimmed, tuple):
-                audio = audio_trimmed[0]  # Extract the audio data from the tuple
-            else:
-                audio = audio_trimmed
+            try:
+                # Load the closest sample
+                if closest_path:  # Ensure path is not None
+                    audio, sr = librosa.load(closest_path, sr=None)
+                    print_info(f"  Successfully loaded closest sample")
+                else:
+                    print_error(f"  Error: closest_path is None")
+                    continue
 
-            note_audios.append(audio)
-            max_length = max(max_length, len(audio))
-            print_info(f"  Successfully processed note for chord")
-            continue
-        except Exception as e:
-            print_error(f"  Error processing note: {str(e)}")
-            continue
+                # Pitch shift to the target note using standard method
+                audio, sr = pitch_shift_sample(
+                    audio, sr, closest_note, closest_octave, note, octave
+                )
 
-    if not note_audios:
-        print(
-            f"Error: Could not generate chord with root {root_note}{root_octave} - no valid notes found"
-        )
-        return None, None
+                print_info(
+                    f"  Successfully pitch-shifted to {note}{octave} using standard method"
+                )
 
-    # Extend chord duration by the specified factor
-    if chord_duration_factor > 1.0:
-        # Instead of repeating the sustain, we'll use a proper time stretching approach
-        # but apply it to the entire mixed chord after all notes are combined
+                # Trim silence at the beginning to ensure all notes start together
+                # Ensure audio is a numpy array
+                if isinstance(audio, tuple):
+                    audio = audio[0]
 
-        # First, mix the notes at their original length
-        aligned_note_audios = []
-        for audio in note_audios:
-            # Pad shorter audio to match the longest one
-            padded_audio = np.pad(audio, (0, max(0, max_length - len(audio))))
-            aligned_note_audios.append(padded_audio)
+                # Detect the start of the signal
+                start_threshold = 0.01  # 1% of the peak amplitude
+                nonsilent = np.where(
+                    np.abs(audio) > start_threshold * np.max(np.abs(audio))
+                )[0]
+                if len(nonsilent) > 0:
+                    start_idx = max(
+                        0, nonsilent[0] - 400
+                    )  # Add a small buffer before the start
+                    audio = audio[start_idx:]
+                    print_info(
+                        f"  Trimmed {start_idx} samples of silence from beginning"
+                    )
 
-        # Mix all notes together
-        mixed_audio = np.zeros(max_length)
-        for audio in aligned_note_audios:
-            # Add to the mix (with normalization to prevent clipping)
-            mixed_audio += audio / len(aligned_note_audios)
+            except Exception as e:
+                print_error(f"  Error processing note {note}{octave}: {str(e)}")
+                continue
 
-        # Now time-stretch the entire mixed chord
-        # This preserves the natural envelope and harmonics better
+        # Normalize the note
+        if np.max(np.abs(audio)) > 0:
+            audio = (
+                audio / np.max(np.abs(audio)) * 0.95 * 0.5
+            )  # Reduce volume of harmony notes
 
-        # For very short samples, use a smaller n_fft value
-        n_fft = 2048  # Default value
-        if len(mixed_audio) < n_fft:
-            # Use a power of 2 that's smaller than the audio length
-            n_fft = 2 ** int(np.log2(len(mixed_audio) - 1))
-            n_fft = max(32, n_fft)  # Ensure it's not too small
+        # Ensure both audios have compatible sample rates
+        if sr != middle_sr:
+            # Resample note to match chord
+            audio = librosa.resample(audio, orig_sr=sr, target_sr=middle_sr)
+            sr = middle_sr
 
-        # Convert to float64 to ensure it's the right type for time_stretch
-        mixed_audio_float = mixed_audio.astype(np.float64)
+        # Mix note with chord
+        # First ensure both are long enough
+        if len(audio) > len(chord_audio):
+            extended_chord = np.zeros(len(audio))
+            extended_chord[: len(chord_audio)] = chord_audio
+            chord_audio = extended_chord
+        else:
+            extended_note = np.zeros(len(chord_audio))
+            extended_note[: len(audio)] = audio
+            audio = extended_note
 
-        # Use librosa's time stretching on the mixed chord
-        # For stretching, rate < 1 makes it longer
-        rate = 1.0 / chord_duration_factor
-        mixed_audio = librosa.effects.time_stretch(
-            mixed_audio_float, rate=float(rate), n_fft=n_fft
-        )
+        # Mix with some basic level adjustment
+        chord_audio = chord_audio + audio
 
-        # Apply a gentle envelope to ensure smooth decay
-        envelope = np.ones(len(mixed_audio))
-        fade_len = min(
-            int(sr * 0.1), len(mixed_audio) // 10
-        )  # 100ms fade or 1/10 of length
+    # Normalize the final chord
+    if np.max(np.abs(chord_audio)) > 0:
+        chord_audio = chord_audio / np.max(np.abs(chord_audio)) * 0.95
 
-        # Only apply fade out (keep the attack intact)
-        if fade_len > 0:
-            envelope[-fade_len:] = np.linspace(1, 0, fade_len)
+    # Save the chord
+    sf.write(output_path, chord_audio, sr)
+    print_success(f"Saved chord {chord_filename}")
 
-        mixed_audio = mixed_audio * envelope
-
-        # Normalize the final output to prevent clipping
-        if np.max(np.abs(mixed_audio)) > 0:
-            mixed_audio = mixed_audio / np.max(np.abs(mixed_audio)) * 0.95
-
-        return mixed_audio, sr
-
-    # If no duration extension, continue with the original approach
-    # Ensure all notes have the same length
-    aligned_note_audios = []
-    for audio in note_audios:
-        # Pad shorter audio to match the longest one
-        padded_audio = np.pad(audio, (0, max(0, max_length - len(audio))))
-        aligned_note_audios.append(padded_audio)
-
-    # Mix all notes together
-    mixed_audio = np.zeros(max_length)
-    for audio in aligned_note_audios:
-        # Add to the mix (with normalization to prevent clipping)
-        mixed_audio += audio / len(aligned_note_audios)
-
-    # Apply a slight fade-in and fade-out to prevent clicks
-    fade_samples = min(int(sr * 0.01), max_length // 10)  # 10ms fade or 1/10 of length
-    if fade_samples > 0:
-        # Fade in
-        fade_in = np.linspace(0, 1, fade_samples)
-        mixed_audio[:fade_samples] *= fade_in
-
-        # Fade out
-        fade_out = np.linspace(1, 0, fade_samples)
-        mixed_audio[-fade_samples:] *= fade_out
-
-    # Normalize the final output to prevent clipping
-    if np.max(np.abs(mixed_audio)) > 0:
-        mixed_audio = mixed_audio / np.max(np.abs(mixed_audio)) * 0.95
-
-    return mixed_audio, sr
+    return chord_audio, sr
 
 
 def generate_chords(
@@ -897,12 +966,16 @@ def generate_chords(
     generate_inversions=False,
     selected_chord_types=None,  # New parameter for selected chord types
     selected_inversions=None,  # New parameter for selected inversions
+    pitch_shift_method="standard",  # Parameter for pitch shift method
 ):
     """Generate chord samples based on the provided chord definitions."""
     notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
     # Use the hardcoded chord definitions
     chord_defs = CHORD_DEFINITIONS
+
+    # Flag to track if any chords were generated
+    chords_generated = False
 
     # Acquire lock for consistent console output
     with tqdm_lock:
@@ -927,6 +1000,7 @@ def generate_chords(
             print_info(f"Further filtered to {len(chord_defs)} specific chord types")
 
         print_header(f"Generating {len(chord_defs)} chord types")
+        print_info("Root position chords will always be generated.")
         if generate_inversions:
             if selected_inversions is not None:
                 print_info(
@@ -1038,6 +1112,9 @@ def generate_chords(
                     )
 
             # Generate core chords with roots from C2 to B4
+            root_chords_generated = (
+                False  # Track if we've generated any root position chords
+            )
             for octave in range(2, 5):
                 for note in notes:
                     # Skip if the highest note in the chord would be above B8
@@ -1048,16 +1125,17 @@ def generate_chords(
                     if highest_octave > 8:
                         continue
 
-                    # Generate the chord
+                    # Generate the root position chord regardless of pitch_shift_method
                     chord_audio, sr = generate_chord(
                         note,
                         octave,
                         semitones,
                         all_samples,
                         source_dir,
-                        target_dir,
+                        chord_dir,
                         prefix,
-                        chord_duration_factor=4.0,
+                        1.0,  # Use lower duration factor for core chords
+                        pitch_shift_method,
                     )
 
                     if chord_audio is not None:
@@ -1068,6 +1146,8 @@ def generate_chords(
                         chord_path = os.path.join(quality_dir, chord_filename)
                         sf.write(chord_path, chord_audio, sr)
                         tqdm.write(f"{SUCCESS}    Generated {chord_filename}{RESET}")
+                        root_chords_generated = True
+                        chords_generated = True
 
                         # Store the chord for later use in pitch shifting
                         core_chords[(note, octave)] = (chord_path, chord_audio, sr)
@@ -1106,7 +1186,8 @@ def generate_chords(
                                         source_dir,
                                         target_dir,
                                         prefix,
-                                        chord_duration_factor=4.0,
+                                        1.0,  # No duration factor for inversion
+                                        pitch_shift_method,
                                     )
 
                                     # Check if inversion generation returned None
@@ -1131,395 +1212,196 @@ def generate_chords(
                                         f"{WARNING}    Error generating inversion {inv_num} for {chord_name}: {str(e)}{RESET}"
                                     )
 
-                                    # Save the inverted chord with inversion number in filename using the original chord audio as fallback
-                                    inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
-                                    inv_chord_path = os.path.join(
-                                        inversions_dir, inv_chord_filename
-                                    )
-                                    sf.write(inv_chord_path, chord_audio, sr)
-                                    tqdm.write(
-                                        f"{SUCCESS}    Generated {inv_chord_filename} (fallback){RESET}"
-                                    )
-
-            # Now generate the extended range (C1-B1 and C5-B8) by pitch shifting
-            # First, find the closest core chord for each target chord
-            for octave in range(1, 9):
-                # Skip the core octaves we've already generated
-                if 2 <= octave <= 4:
-                    continue
-
-                for note in notes:
-                    # Skip if the highest note in the chord would be above B8
-                    highest_semitone = max(semitones)
-                    highest_note, highest_octave = get_note_from_semitone(
-                        note, octave, highest_semitone
-                    )
-                    if highest_octave > 8:
-                        continue
-
-                    # Find the closest core chord to use as source
-                    closest_core = None
-                    min_distance = float("inf")
-
-                    for core_note, core_octave in core_chords.keys():
-                        # Calculate semitone distance
-                        core_index = notes.index(core_note) + (core_octave * 12)
-                        target_index = notes.index(note) + (octave * 12)
-                        distance = abs(target_index - core_index)
-
-                        if distance < min_distance:
-                            min_distance = distance
-                            closest_core = (core_note, core_octave)
-
-                    if closest_core:
-                        source_note, source_octave = closest_core
-                        chord_path, chord_audio, sr = core_chords[closest_core]
-
-                        # Pitch shift the chord
-                        with tqdm_lock:
-                            tqdm.write(
-                                f"{INFO}    Pitch shifting {source_note}{source_octave} chord to {note}{octave}...{RESET}"
-                            )
-
-                        # Calculate pitch shift factor based on semitone distance
-                        source_freq = get_note_frequency(source_note, source_octave)
-                        target_freq = get_note_frequency(note, octave)
-                        shift_factor = target_freq / source_freq
-
-                        # Resample the audio
-                        if shift_factor != 1.0:
-                            # For higher notes, we need to shorten the sample (speed up)
-                            # For lower notes, we need to lengthen the sample (slow down)
-                            new_length = int(len(chord_audio) / shift_factor)
-                            new_audio = scipy_signal.resample(chord_audio, new_length)
-
-                            # Time stretching to maintain consistent duration
-                            # First, calculate the current duration
-                            current_duration = len(new_audio) / sr
-
-                            # Get the duration of the source chord
-                            source_duration = len(chord_audio) / sr
-
-                            # Calculate stretch factor to match the source duration
-                            stretch_factor = source_duration / current_duration
-
-                            # Only apply time stretching if the difference is significant
-                            if abs(stretch_factor - 1.0) > 0.01:
-                                with tqdm_lock:
-                                    tqdm.write(
-                                        f"{INFO}    Time stretching to match duration (factor: {stretch_factor:.2f}){RESET}"
-                                    )
-
-                                # For librosa's time_stretch, rate < 1 makes it longer
-                                rate = 1.0 / stretch_factor
-
-                                # For very short samples, use a smaller n_fft value
-                                n_fft = 2048  # Default value
-                                if len(new_audio) < n_fft:
-                                    # Use a power of 2 that's smaller than the audio length
-                                    n_fft = 2 ** int(np.log2(len(new_audio) - 1))
-                                    n_fft = max(32, n_fft)  # Ensure it's not too small
-
-                                # Convert to float64 to ensure it's the right type for time_stretch
-                                if isinstance(new_audio, tuple):
-                                    new_audio_float = new_audio[0].astype(np.float64)
-                                else:
-                                    new_audio_float = new_audio.astype(np.float64)
-
-                                # Apply time stretching
-                                new_audio = librosa.effects.time_stretch(
-                                    new_audio_float, rate=float(rate), n_fft=n_fft
-                                )
-
-                                # Apply a gentle envelope to ensure smooth decay
-                                envelope = np.ones(len(new_audio))
-                                fade_len = min(
-                                    int(sr * 0.1), len(new_audio) // 10
-                                )  # 100ms fade or 1/10 of length
-
-                                # Only apply fade out (keep the attack intact)
-                                if fade_len > 0:
-                                    envelope[-fade_len:] = np.linspace(1, 0, fade_len)
-
-                                new_audio = new_audio * envelope
-
-                            # Normalize the final output to prevent clipping
-                            if np.max(np.abs(new_audio)) > 0:
-                                new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
-
-                            # Save the pitch-shifted chord
-                            chord_filename = (
-                                f"{prefix}-{safe_chord_name}-{note}{octave}.wav"
-                            )
-                            chord_path = os.path.join(quality_dir, chord_filename)
-                            sf.write(chord_path, new_audio, sr)
-
-                            with tqdm_lock:
-                                tqdm.write(
-                                    f"{SUCCESS}    Generated {chord_filename} (pitch-shifted){RESET}"
-                                )
-
-                            # Generate inversions for this chord if requested
-                            if generate_inversions and inversions:
-                                for inv_num, inv_semitones in inversions:
-                                    # Skip if this inversion is not in the selected inversions for this chord
-                                    if selected_inversions is not None:
-                                        # Check if this chord type has selected inversions
-                                        chord_key = (quality, chord_name)
-                                        if (
-                                            chord_key not in selected_inversions
-                                            or inv_num
-                                            not in selected_inversions[chord_key]
-                                        ):
-                                            continue
-
-                                    # For pitch-shifted chords, we need to use the same approach
-                                    # Instead of generating from scratch, pitch-shift the chord we just created
-                                    inv_chord_filename = f"{prefix}-{safe_chord_name}-{inv_num}stInv-{note}{octave}.wav"
-                                    inv_chord_path = os.path.join(
-                                        inversions_dir, inv_chord_filename
-                                    )
-
-                                    # We already have the new_audio, so we'll use that
-                                    # This avoids trying to access files that might not exist
-                                    sf.write(inv_chord_path, new_audio, sr)
-
-                                    with tqdm_lock:
-                                        tqdm.write(
-                                            f"{SUCCESS}    Generated {inv_chord_filename} (pitch-shifted){RESET}"
-                                        )
-
-                    # Update the master progress bar
-                    with tqdm_lock:
-                        master_pbar.update(1)
-
-                        # Update for inversions if applicable
-                        if generate_inversions and inversions and closest_core:
-                            master_pbar.update(len(inversions))
-
-            # Update chord progress bar
+            # Update master progress bar based on total chords generated
             with tqdm_lock:
+                # Update chord progress bar
                 chord_pbar.update(1)
 
-        # Close the chord progress bar
-        with tqdm_lock:
-            chord_pbar.close()
+                # If we didn't generate any root chords for this type, show a warning
+                if not root_chords_generated:
+                    tqdm.write(
+                        f"{WARNING}    Failed to generate any root position chords for {chord_name}{RESET}"
+                    )
 
         # Update quality progress bar
         with tqdm_lock:
             quality_pbar.update(1)
+            chord_pbar.close()
 
     # Close progress bars
     with tqdm_lock:
         quality_pbar.close()
         master_pbar.close()
 
-        tqdm.write(f"{SUCCESS}\nChord generation complete!{RESET}")
+    # Check if we generated any chords at all
+    if not chords_generated:
+        print_warning("No chords were generated. Check your sample files and settings.")
+        print_info(
+            "Make sure your source directory contains valid note samples (e.g., C4, G#3)."
+        )
+        print_info(
+            "Also check that you selected appropriate chord qualities and pitch shift method."
+        )
 
-    # Generate full chord sample files by type
-    full_chord_filenames = generate_full_chord_samples(chord_dir, prefix)
-
-    return chord_dir, full_chord_filenames
+    return chord_dir, []
 
 
 def generate_missing_samples(
-    prefix, existing_samples, source_dir, target_dir, time_match=False
+    prefix,
+    existing_samples,
+    source_dir,
+    target_dir,
+    time_match=False,
+    pitch_shift_method="standard",
+    keep_artifacts=False,
 ):
     """Generate all missing samples across the 8-octave range."""
-    notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-    generated_files = []
+    if not os.path.exists(target_dir):
+        os.makedirs(target_dir)
+
+    print_info(f"Generating missing samples for prefix: {prefix}")
+    print_info(f"Using pitch shift method: {pitch_shift_method}")
 
     # Parse existing samples
-    parsed_samples = {}
+    existing_notes = {}
+    bad_samples = []
+    durations = []  # store durations for time matching
+
     for sample in existing_samples:
         note, octave = parse_note_from_filename(sample)
         if note and octave:
-            parsed_samples[sample] = (note, octave)
+            existing_notes[(note, octave)] = sample
 
-    # Acquire lock for consistent output
-    with tqdm_lock:
-        # Calculate average duration of existing samples more accurately
-        durations = []
-        for sample in existing_samples:
-            if sample in parsed_samples:
-                # Get file info directly using soundfile instead of loading the entire file
-                file_path = os.path.join(source_dir, sample)
-                info = sf.info(file_path)
-                duration = info.duration  # This gives the exact duration in seconds
-                durations.append(duration)
-                print_info(f"Sample {sample} duration: {duration:.2f} seconds")
+            # If we're time matching, get the durations
+            if time_match:
+                try:
+                    audio_path = os.path.join(source_dir, sample)
+                    audio_data, sr = librosa.load(audio_path, sr=None)
+                    duration = len(audio_data) / sr
+                    durations.append(duration)
+                except Exception as e:
+                    print_warning(f"  Failed to get duration for {sample}: {str(e)}")
+        else:
+            bad_samples.append(sample)
 
-        avg_duration = np.mean(durations) if durations else 2.0  # Default to 2 seconds
-
-        if time_match and durations:
-            print_info(
-                f"Time matching enabled - target duration: {avg_duration:.2f} seconds"
-            )
-
-        # Count total samples to generate
-        total_to_generate = 0
-        for octave in range(1, 9):
-            for note in notes:
-                target_filename = f"{prefix}-{note}{octave}.wav"
-                if target_filename not in existing_samples:
-                    total_to_generate += 1
-
-        # Create progress bar at a fixed position - use position 1 to avoid conflicts with other progress bars
-        position = 1
-        pbar = tqdm(
-            total=total_to_generate,
-            desc=f"Generating samples for {os.path.basename(source_dir)}",
-            position=position,
-            leave=True,
-            bar_format="{l_bar}%s{bar}%s{r_bar}" % (Fore.BLUE, RESET),
+    if bad_samples:
+        print_warning(
+            f"  {len(bad_samples)} samples couldn't be parsed for note/octave and will be ignored:"
         )
+        for sample in bad_samples[:5]:  # Show just a few examples
+            print_warning(f"    - {sample}")
+        if len(bad_samples) > 5:
+            print_warning(f"    - (and {len(bad_samples) - 5} more)")
 
-    # Update status
-    update_status(
-        source_dir, f"Preparing to generate {total_to_generate} missing samples", "info"
+    # Calculate average duration for time matching
+    avg_duration = None
+    if time_match and durations:
+        avg_duration = sum(durations) / len(durations)
+        print_info(f"  Average sample duration: {avg_duration:.2f}s")
+
+    # Generate missing notes for all octaves (C0 to B8)
+    notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    octaves = range(0, 9)  # 0-8
+    generated_files = []
+
+    # Progress bar
+    total_notes = len(notes) * len(octaves)
+    existing_count = len(existing_notes)
+    missing_count = total_notes - existing_count
+
+    print_info(
+        f"  Found {existing_count} existing notes, generating {missing_count} missing notes"
     )
 
-    # Track progress for status updates
-    completed_samples = 0
-    last_status_update_percent = 0
+    with tqdm(total=missing_count, desc="Generating notes", position=0) as progress_bar:
+        for octave in octaves:
+            for note in notes:
+                target_note = note
+                target_octave = octave
+                target_filename = f"{prefix}-{target_note}{target_octave}.wav"
 
-    # Generate missing samples for all notes in octaves 1-8
-    for octave in range(1, 9):
-        for note in notes:
-            target_filename = f"{prefix}-{note}{octave}.wav"
+                # Skip if file already exists
+                if (target_note, target_octave) in existing_notes:
+                    continue
 
-            # Skip if file already exists in source directory
-            if target_filename in existing_samples:
-                generated_files.append(target_filename)
-                continue
-
-            # Skip if file already exists in target directory (if different from source)
-            if source_dir != target_dir and os.path.exists(
-                os.path.join(target_dir, target_filename)
-            ):
-                generated_files.append(target_filename)
-                continue
-
-            # Find closest sample to use as source
-            source_sample = find_closest_sample(note, octave, existing_samples)
-            if not source_sample:
-                with tqdm_lock:
-                    print_warning(
-                        f"No suitable source sample found for {target_filename}"
-                    )
-                continue
-
-            source_note, source_octave = parsed_samples[source_sample]
-
-            # Load source audio
-            audio, sr = librosa.load(os.path.join(source_dir, source_sample), sr=None)
-
-            # Pitch shift to target note
-            new_audio, new_sr = pitch_shift_sample(
-                audio, sr, source_note, source_octave, note, octave
-            )
-
-            # Time stretch to match average duration if requested
-            if time_match and durations:
-                # Calculate current duration directly from the audio data
-                current_duration = len(new_audio) / new_sr
-                with tqdm_lock:
-                    print_info(
-                        f"  Before stretching: {target_filename} duration: {current_duration:.2f} seconds"
-                    )
-
-                # In librosa's time_stretch, rate > 1 speeds up, rate < 1 slows down
-                # So we need to use 1/stretch_factor to get the correct behavior
-                stretch_factor = avg_duration / current_duration
-                rate = 1.0 / stretch_factor  # Inverse for librosa's time_stretch
-
-                if (
-                    abs(stretch_factor - 1.0) > 0.01
-                ):  # Only stretch if difference is significant
-                    with tqdm_lock:
-                        print_info(
-                            f"  Time stretching {target_filename} (target: {avg_duration:.2f}s, factor: {stretch_factor:.2f}, rate: {rate:.2f})"
-                        )
-
-                    # For very short samples, use a smaller n_fft value
-                    n_fft = 2048  # Default value
-                    if len(new_audio) < n_fft:
-                        # Use a power of 2 that's smaller than the audio length
-                        n_fft = 2 ** int(np.log2(len(new_audio) - 1))
-                        n_fft = max(32, n_fft)  # Ensure it's not too small
-                        with tqdm_lock:
-                            print_info(
-                                f"  Using smaller FFT window (n_fft={n_fft}) for short sample"
-                            )
-
-                    # Use librosa's high-quality time stretching with corrected rate and appropriate n_fft
-                    # Convert to float64 to ensure correct type for time_stretch
-                    # Make sure new_audio is a numpy array, not a tuple
-                    if isinstance(new_audio, tuple):
-                        new_audio_float = new_audio[0].astype(np.float64)
-                    else:
-                        new_audio_float = new_audio.astype(np.float64)
-
-                    new_audio = librosa.effects.time_stretch(
-                        new_audio_float, rate=float(rate), n_fft=n_fft
-                    )
-
-                    # Apply a gentle envelope to ensure smooth decay
-                    envelope = np.ones(len(new_audio))
-                    fade_len = min(
-                        int(new_sr * 0.1), len(new_audio) // 10
-                    )  # 100ms fade or 1/10 of length
-
-                    # Only apply fade out (keep the attack intact)
-                    if fade_len > 0:
-                        envelope[-fade_len:] = np.linspace(1, 0, fade_len)
-
-                    new_audio = new_audio * envelope
-
-            # Normalize audio to prevent clipping
-            if np.max(np.abs(new_audio)) > 0:
-                new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
-
-            # Save the pitch-shifted and time-stretched audio
-            output_path = os.path.join(target_dir, target_filename)
-            sf.write(output_path, new_audio, new_sr)
-
-            # Add the generated file to the list
-            generated_files.append(target_filename)
-
-            # Print success message
-            with tqdm_lock:
-                print_success(f"Generated {target_filename}")
-
-            # Update the progress bar
-            with tqdm_lock:
-                pbar.update(1)
-
-            # Update progress tracking
-            completed_samples += 1
-            progress_percent = (
-                int((completed_samples / total_to_generate) * 100)
-                if total_to_generate > 0
-                else 100
-            )
-
-            # Update status message at 10% increments
-            if (
-                progress_percent >= last_status_update_percent + 10
-                or completed_samples == total_to_generate
-            ):
-                last_status_update_percent = progress_percent
-                update_status(
-                    source_dir,
-                    f"Generated {completed_samples}/{total_to_generate} samples ({progress_percent}%)",
-                    "info",
+                # Find the closest sample
+                closest_file, closest_note, closest_octave = find_closest_sample(
+                    target_note, target_octave, existing_samples
                 )
 
-    # Close the progress bar
-    with tqdm_lock:
-        pbar.close()
+                # Skip if no close sample found
+                if not closest_file:
+                    with tqdm_lock:
+                        print_warning(
+                            f"  No suitable source sample found for {target_note}{target_octave}, skipping"
+                        )
+                    continue
 
-    return generated_files
+                # Load the source audio
+                closest_path = os.path.join(source_dir, closest_file)
+                try:
+                    audio_data, sr = librosa.load(closest_path, sr=None)
+                except Exception as e:
+                    with tqdm_lock:
+                        print_error(
+                            f"  Failed to load {closest_file}: {str(e)}, skipping {target_note}{target_octave}"
+                        )
+                    continue
+
+                # Standard pitch shifting
+                new_audio, new_sr = pitch_shift_sample(
+                    audio_data,
+                    sr,
+                    closest_note,
+                    closest_octave,
+                    target_note,
+                    target_octave,
+                )
+
+                # Time stretch if requested
+                if time_match and durations and avg_duration is not None:
+                    current_duration = len(new_audio) / new_sr
+                    stretch_factor = avg_duration / current_duration
+                    if abs(stretch_factor - 1.0) > 0.01:
+                        with tqdm_lock:
+                            print_info(
+                                f"  Time stretching (target: {avg_duration:.2f}s, factor: {stretch_factor:.2f})"
+                            )
+                        # Use librosa's time stretch
+                        # Ensure new_audio is a numpy array before passing to time_stretch
+                        if isinstance(new_audio, tuple):
+                            new_audio_array = new_audio[0]
+                        else:
+                            new_audio_array = new_audio
+
+                        new_audio = librosa.effects.time_stretch(
+                            new_audio_array, rate=1.0 / stretch_factor
+                        )
+
+                # Normalize output
+                if np.max(np.abs(new_audio)) > 0:
+                    new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
+
+                # Save the standard method output
+                output_path = os.path.join(target_dir, target_filename)
+                sf.write(output_path, new_audio, new_sr)
+
+                with tqdm_lock:
+                    print_success(f"Generated {target_filename} using standard method")
+                generated_files.append(target_filename)
+
+                # Update progress bar
+                with tqdm_lock:
+                    progress_bar.update(1)
+
+    # Return list of all samples (existing + generated)
+    all_samples = existing_samples.copy()
+
+    # Add generated files with proper paths for expansion directory
+    for gen_file in generated_files:
+        all_samples.append(gen_file)
+
+    return all_samples
 
 
 def play_all_notes(all_samples, source_dir, target_dir):
@@ -1925,6 +1807,7 @@ def process_directory(
     selected_chord_types=None,  # New parameter for selected chord types
     selected_inversions=None,  # New parameter for selected inversions
     overwrite=False,  # Parameter to control overwriting existing directories
+    pitch_shift_method="standard",  # Parameter to control pitch shift method: "standard" only
 ):
     """Process a single directory to generate missing samples."""
     # Acquire lock for consistent console output when running in parallel
@@ -1997,10 +1880,19 @@ def process_directory(
     # Release lock during time-consuming operations for better parallelism
 
     # Generate missing samples
-    update_status(source_dir, "Generating missing samples...", "info")
-    all_samples = generate_missing_samples(
-        dir_prefix, valid_samples, source_dir, target_dir, time_match
-    )
+    all_samples = []
+    if valid_samples:
+        print_header(f"Generating missing notes for {os.path.basename(source_dir)}")
+        update_status(source_dir, "Generating missing samples...", "info")
+        all_samples = generate_missing_samples(
+            dir_prefix,
+            valid_samples,
+            source_dir,
+            target_dir,
+            time_match,
+            pitch_shift_method,
+            keep_artifacts,
+        )
 
     # Use lock for progress output
     update_status(source_dir, f"Generated {len(all_samples)} total samples", "success")
@@ -2021,6 +1913,7 @@ def process_directory(
             generate_inversions=generate_inversions,
             selected_chord_types=selected_chord_types,  # Pass selected chord types
             selected_inversions=selected_inversions,  # Pass selected inversions
+            pitch_shift_method=pitch_shift_method,  # Pass pitch shift method
         )
         # Keep the original chord_dir value for the cleanup step
         update_status(
@@ -2612,6 +2505,196 @@ def interactive_mode():
         "set_custom_workers": "set_custom_workers" in options,
     }
 
+    # Ask about pitch shifting method
+    pitch_shift_method = questionary.select(
+        "Which pitch shifting method would you like to use?",
+        choices=[
+            "both (recommended for best quality)",
+            "standard (faster, more consistent)",
+            "granular (better for extreme shifts)",
+        ],
+        default="both (recommended for best quality)",
+        style=custom_style,
+    ).ask()
+
+    if pitch_shift_method:
+        # Extract the method name without the description
+        pitch_shift_method = pitch_shift_method.split(" ")[0]
+    else:
+        # Default to "both" if the user cancels
+        pitch_shift_method = "both"
+
+    # If the user wants to generate chords, ask additional questions about chord types and inversions
+    selected_chord_types = None
+    selected_inversions = None
+    chord_qualities = None  # Initialize chord_qualities variable even if chords=False
+
+    if options_dict["chords"]:
+        # Ask about chord qualities
+        print_info("\nThe following chord qualities are available:")
+
+        # Extract unique chord qualities from CHORD_DEFINITIONS
+        all_qualities = sorted(set(quality for _, quality, _, _ in CHORD_DEFINITIONS))
+        print_info(f"Available qualities: {', '.join(all_qualities)}")
+
+        # Create choice objects for each quality
+        quality_choices = [
+            questionary.Choice(quality, quality) for quality in all_qualities
+        ]
+
+        # Ask which chord qualities to generate
+        selected_qualities = questionary.checkbox(
+            "Which chord qualities would you like to generate?",
+            choices=quality_choices,
+            style=custom_style,
+        ).ask()
+
+        # If none selected, use all qualities
+        chord_qualities = (
+            selected_qualities
+            if selected_qualities
+            else sorted(set(quality for _, quality, _, _ in CHORD_DEFINITIONS))
+        )
+
+        # Ask about specific chord types within the selected qualities
+        specific_types = questionary.confirm(
+            "Would you like to select specific chord types within these qualities?",
+            default=False,
+            style=custom_style,
+        ).ask()
+
+        if specific_types:
+            # Group chord types by quality for selection
+            chord_types_by_quality = {}
+            for name, q, semitones, notes_count in CHORD_DEFINITIONS:
+                if q in chord_qualities:
+                    if q not in chord_types_by_quality:
+                        chord_types_by_quality[q] = []
+                    chord_types_by_quality[q].append(name)
+
+            # Create a dictionary to store the selected types
+            selected_chord_types = {}
+
+            # For each selected quality, ask which chord types to generate
+            for quality in chord_qualities:
+                if quality in chord_types_by_quality:
+                    # Create choice objects for each chord type
+                    type_choices = [
+                        questionary.Choice(chord_type, chord_type)
+                        for chord_type in chord_types_by_quality[quality]
+                    ]
+
+                    # Ask which chord types to generate
+                    selected_types = questionary.checkbox(
+                        f"Which {quality} chord types would you like to generate?",
+                        choices=type_choices,
+                        style=custom_style,
+                    ).ask()
+
+                    # If types were selected, add them to the dictionary
+                    if selected_types:
+                        selected_chord_types[quality] = selected_types
+
+        # Ask about inversions
+        print_info("\nRoot position chords will always be generated.")
+        generate_inversions = questionary.confirm(
+            "Would you also like to generate chord inversions?",
+            default=False,
+            style=custom_style,
+        ).ask()
+
+        if generate_inversions:
+            # Ask if they want all inversions or specific ones
+            all_inversions = questionary.confirm(
+                "Generate all possible inversions for each chord?",
+                default=True,
+                style=custom_style,
+            ).ask()
+
+            if not all_inversions:
+                # If not all inversions, ask about specific inversions
+                selected_inversions = {}
+
+                # Prepare data for processing
+                chord_types_to_process = []
+                if specific_types and selected_chord_types:
+                    # Use the selected chord types
+                    for quality, types in selected_chord_types.items():
+                        for chord_type in types:
+                            for name, _, _, notes_count in CHORD_DEFINITIONS:
+                                if name == chord_type:
+                                    chord_types_to_process.append(
+                                        (quality, chord_type, notes_count)
+                                    )
+                                    break
+                else:
+                    # Use all chord types within selected qualities
+                    qualities_to_process = (
+                        chord_qualities
+                        if chord_qualities
+                        else sorted(
+                            set(quality for _, quality, _, _ in CHORD_DEFINITIONS)
+                        )
+                    )
+                    for name, quality, semitones, notes_count in CHORD_DEFINITIONS:
+                        if quality in qualities_to_process:
+                            chord_types_to_process.append((quality, name, notes_count))
+
+                # Function to get proper ordinal suffix
+                def get_ordinal_suffix(n):
+                    if 10 <= n % 100 <= 20:
+                        suffix = "th"
+                    else:
+                        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+                    return f"{n}{suffix}"
+
+                # Process each chord type individually for more granular control
+                for quality, chord_type, notes_count in sorted(
+                    chord_types_to_process, key=lambda x: (x[0], x[1])
+                ):
+                    if notes_count >= 3:  # Only process chords that can have inversions
+                        possible_inversions = notes_count - 1
+                        inversion_choices = [
+                            get_ordinal_suffix(i)
+                            for i in range(1, possible_inversions + 1)
+                        ]
+
+                        header = f"Select inversions for {chord_type} ({quality}) - {notes_count}-note chord:"
+                        print_info(
+                            f"\nPossible inversions: {', '.join(inversion_choices)}"
+                        )
+
+                        # Create choice objects with all checked by default
+                        inversion_choices_objects = [
+                            questionary.Choice(inv, inv, checked=True)
+                            for inv in inversion_choices
+                        ]
+
+                        selected = questionary.checkbox(
+                            header,
+                            choices=inversion_choices_objects,
+                            style=custom_style,
+                        ).ask()
+
+                        if selected:
+                            # Convert from ordinal format to inversion numbers
+                            inversion_numbers = [
+                                int(inv.rstrip("stndrh")) for inv in selected
+                            ]
+                            selected_inversions[(quality, chord_type)] = (
+                                inversion_numbers
+                            )
+                        else:
+                            # No inversions selected for this chord type
+                            print_info(
+                                f"No inversions selected for {chord_type} ({quality})"
+                            )
+        else:  # No inversions
+            print_info("Only root position chords will be generated.")
+    else:  # No chord generation
+        generate_inversions = False
+        selected_inversions = []
+
     # Handle custom prefix if selected
     if options_dict["use_custom_prefix"]:
         prefix = questionary.text(
@@ -2634,158 +2717,6 @@ def interactive_mode():
         max_workers = int(max_workers_input)
         print_info(f"Using {max_workers} parallel workers for processing")
 
-    # If chord generation is selected, ask for more details
-    chord_qualities = None
-    selected_chord_types = None  # New variable to store selected chord types
-    selected_inversions = None  # New variable to store selected inversions
-    generate_inversions = False
-    if options_dict["chords"]:
-        # Automatically choose "Select specific chord qualities"
-        chord_mode = "Select specific chord qualities"
-        print_info("Using specific chord qualities mode")
-
-        # Extract unique chord qualities from CHORD_DEFINITIONS
-        unique_qualities = sorted(
-            set(quality for _, quality, _, _ in CHORD_DEFINITIONS)
-        )
-
-        # Create a list of choice objects with all checked by default
-        quality_choices = [
-            questionary.Choice(quality, quality, checked=True)
-            for quality in unique_qualities
-        ]
-
-        chord_qualities = questionary.checkbox(
-            "Select chord qualities to generate (all selected by default):",
-            choices=quality_choices,
-            style=custom_style,
-        ).ask()
-
-        if not chord_qualities:
-            print_warning(
-                "No chord qualities selected. Chord generation will be skipped."
-            )
-            options_dict["chords"] = False
-
-        # Ask about specific chord types within selected qualities
-        if options_dict["chords"]:
-            # Automatically choose "Select specific chord types"
-            chord_type_mode = "Select specific chord types"
-            print_info("Using specific chord types mode")
-
-            selected_chord_types = {}
-
-            # Filter chord definitions by selected qualities or use all qualities
-            qualities_to_process = (
-                chord_qualities
-                if chord_qualities
-                else sorted(set(quality for _, quality, _, _ in CHORD_DEFINITIONS))
-            )
-
-            for quality in qualities_to_process:
-                # Extract chord types for this quality
-                chord_types_for_quality = [
-                    (name, semitones, notes_count)
-                    for name, q, semitones, notes_count in CHORD_DEFINITIONS
-                    if q == quality
-                ]
-
-                # Create a list of choice objects with all checked by default
-                chord_type_choices = [
-                    questionary.Choice(name, name, checked=True)
-                    for name, _, _ in chord_types_for_quality
-                ]
-
-                selected_types = questionary.checkbox(
-                    f"Select chord types for {quality} quality (all selected by default):",
-                    choices=chord_type_choices,
-                    style=custom_style,
-                ).ask()
-
-                if selected_types:
-                    selected_chord_types[quality] = selected_types
-
-        # Ask about inversions if chord generation is still enabled
-        if options_dict["chords"]:
-            # Automatically choose "Select specific inversions"
-            inversion_mode = "Select specific inversions"
-            print_info("Using specific inversions mode with all inversions preselected")
-
-            generate_inversions = True
-            selected_inversions = {}
-
-            # Get all selected chord types and their note counts
-            chord_types_to_process = []
-            if selected_chord_types:
-                # Use selected chord types
-                for quality, types in selected_chord_types.items():
-                    for chord_type in types:
-                        # Find the chord definition to get note count
-                        for name, q, semitones, notes_count in CHORD_DEFINITIONS:
-                            if name == chord_type and q == quality:
-                                chord_types_to_process.append(
-                                    (quality, chord_type, notes_count)
-                                )
-                                break
-            else:
-                # Use all chord types from selected qualities or all qualities
-                qualities_to_process = (
-                    chord_qualities
-                    if chord_qualities
-                    else sorted(set(quality for _, quality, _, _ in CHORD_DEFINITIONS))
-                )
-                for name, quality, semitones, notes_count in CHORD_DEFINITIONS:
-                    if quality in qualities_to_process:
-                        chord_types_to_process.append((quality, name, notes_count))
-
-            # Function to get proper ordinal suffix
-            def get_ordinal_suffix(n):
-                if 10 <= n % 100 <= 20:
-                    suffix = "th"
-                else:
-                    suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-                return f"{n}{suffix}"
-
-            # Process each chord type individually for more granular control
-            for quality, chord_type, notes_count in sorted(
-                chord_types_to_process, key=lambda x: (x[0], x[1])
-            ):
-                if notes_count >= 3:  # Only process chords that can have inversions
-                    possible_inversions = notes_count - 1
-                    inversion_choices = [
-                        get_ordinal_suffix(i) for i in range(1, possible_inversions + 1)
-                    ]
-
-                    header = f"Select inversions for {chord_type} ({quality}) - {notes_count}-note chord:"
-                    print_info(f"\nPossible inversions: {', '.join(inversion_choices)}")
-
-                    # Create choice objects with all checked by default
-                    inversion_choices_objects = [
-                        questionary.Choice(inv, inv, checked=True)
-                        for inv in inversion_choices
-                    ]
-
-                    selected = questionary.checkbox(
-                        header,
-                        choices=inversion_choices_objects,
-                        style=custom_style,
-                    ).ask()
-
-                    if selected:
-                        # Convert from ordinal format to inversion numbers
-                        inversion_numbers = [
-                            int(inv.rstrip("stndrh")) for inv in selected
-                        ]
-                        selected_inversions[(quality, chord_type)] = inversion_numbers
-                    else:
-                        # No inversions selected for this chord type
-                        print_info(
-                            f"No inversions selected for {chord_type} ({quality})"
-                        )
-    else:  # No chord generation
-        generate_inversions = False
-        selected_inversions = []
-
     # Confirm settings
     print_info("\nYour selected settings:")
     print(f"Source directory: {source_dir}")
@@ -2798,6 +2729,8 @@ def interactive_mode():
     print(f"Generate full sample: {options_dict['gen_full']}")
     print(f"Time match: {options_dict['time_match']}")
     print(f"Generate chords: {options_dict['chords']}")
+    print(f"Pitch shift method: {pitch_shift_method}")
+
     if options_dict["chords"]:
         if chord_qualities:
             print(f"Chord qualities: {', '.join(chord_qualities)}")
@@ -2826,7 +2759,11 @@ def interactive_mode():
 
                     # Display grouped inversions
                     for inv_list, chords in inv_to_chords.items():
-                        inv_str = ", ".join([get_ordinal_suffix(i) for i in inv_list])
+                        # Convert tuple to list before using list comprehension
+                        inv_suffix_list = [
+                            get_ordinal_suffix(i) for i in list(inv_list)
+                        ]
+                        inv_str = ", ".join(inv_suffix_list)
                         chord_str = ", ".join(chords)
                         print(f"  {inv_str} for: {chord_str}")
                 else:
@@ -2865,7 +2802,44 @@ def interactive_mode():
                 if os.path.exists(exp_path) and not options_dict["overwrite"]:
                     continue  # Skip this directory
 
-                directories.append(dir_path)
+                # Check if directory contains WAV files before adding it
+                try:
+                    wav_files_in_dir = [
+                        f for f in os.listdir(dir_path) if f.lower().endswith(".wav")
+                    ]
+
+                    # Check if any of the WAV files contain valid note information
+                    valid_samples = []
+                    for sample in wav_files_in_dir:
+                        note, octave = parse_note_from_filename(sample)
+                        if note and octave:
+                            valid_samples.append(sample)
+
+                    if valid_samples:
+                        print_info(
+                            f"Found directory with {len(valid_samples)} valid note samples: {dir_path}"
+                        )
+                        directories.append(dir_path)
+                    elif wav_files_in_dir:
+                        print_info(
+                            f"Skipping directory with WAV files but no valid note samples: {dir_path}"
+                        )
+                    else:
+                        print_info(f"Skipping directory with no WAV files: {dir_path}")
+                except (PermissionError, OSError) as e:
+                    print_warning(f"Could not access directory {dir_path}: {str(e)}")
+                    continue
+
+        # Remove duplicates while preserving order
+        seen = set()
+        directories = [x for x in directories if not (x in seen or seen.add(x))]
+
+        # Check if we have any directories to process
+        if len(directories) <= 1:  # Only the source directory
+            print_warning(
+                "No subdirectories with valid note samples found for recursive processing."
+            )
+            print_info("Will only process the main source directory.")
 
         print(
             f"Found {len(directories)} directories to process (excluding expansion and output directories)"
@@ -2904,6 +2878,7 @@ def interactive_mode():
                         "selected_chord_types": selected_chord_types,  # Add new parameter
                         "selected_inversions": selected_inversions,  # Add new parameter
                         "overwrite": options_dict["overwrite"],
+                        "pitch_shift_method": pitch_shift_method,  # New pitch shift method parameter
                     }
                 )
 
@@ -3009,6 +2984,7 @@ def interactive_mode():
                     selected_chord_types=selected_chord_types,  # Add new parameter
                     selected_inversions=selected_inversions,  # Add new parameter
                     overwrite=options_dict["overwrite"],
+                    pitch_shift_method=pitch_shift_method,  # Add pitch shift method parameter
                 )
     else:
         # Process just the single directory (no parallelization needed)
@@ -3036,6 +3012,7 @@ def interactive_mode():
             selected_chord_types=selected_chord_types,  # Add new parameter
             selected_inversions=selected_inversions,  # Add new parameter
             overwrite=options_dict["overwrite"],
+            pitch_shift_method=pitch_shift_method,  # Add pitch shift method parameter
         )
 
     print_success("Processing complete!")
@@ -3064,7 +3041,10 @@ def process_directory_wrapper(**kwargs):
                 "selected_chord_types"
             ),  # Add new parameter
             selected_inversions=kwargs.get("selected_inversions"),  # Add new parameter
-            overwrite=kwargs.get("overwrite", False),
+            overwrite=kwargs.get("overwrite", False),  # Add overwrite parameter
+            pitch_shift_method=kwargs.get(
+                "pitch_shift_method", "standard"
+            ),  # Changed default to standard
         )
 
         # Log successful completion
