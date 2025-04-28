@@ -2448,6 +2448,10 @@ def interactive_mode():
             questionary.Choice(
                 "Set custom number of parallel workers", "set_custom_workers"
             ),
+            questionary.Choice(
+                "Normalize audio to peak (not recommended for preserving volume)",
+                "normalize_audio",
+            ),
         ],
         style=custom_style,
     ).ask()
@@ -2463,11 +2467,14 @@ def interactive_mode():
         "use_custom_prefix": "use_custom_prefix" in options,
         "set_custom_workers": "set_custom_workers" in options,
         "pitch_shift_method": "standard",  # Default to standard method
-        "normalize_audio": False,  # Default to not normalizing audio
+        "normalize_audio": "normalize_audio"
+        in options,  # Set based on option selection
     }
 
     # Set pitch shift method to standard (no menu selection needed)
     pitch_shift_method = "standard"
+    # Set normalize_audio from the options_dict
+    normalize_audio = options_dict["normalize_audio"]
 
     # If the user wants to generate chords, ask additional questions about chord types and inversions
     selected_chord_types = None
