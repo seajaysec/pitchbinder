@@ -497,297 +497,365 @@ def generate_chord(
     target_dir,
     prefix,
     chord_duration_factor=4.0,
-    pitch_shift_method="standard",
+    pitch_shift_method="standard",  # Keep parameter but don't use it
 ):
     """Generate a chord sample by mixing multiple note samples."""
-    # Create target directory if it doesn't exist
-    if not os.path.exists(target_dir):
-        os.makedirs(target_dir)
+    notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
-    # Convert semitones to note names and octaves
-    chord_notes = []
-    for semitone in semitones:
-        note, octave = get_note_from_semitone(root_note, root_octave, semitone)
-        chord_notes.append((note, octave))
-
-    # Sort notes by octave and then within octave for more readable filenames
-    chord_notes.sort(key=lambda x: (x[1], x[0]))
-
-    # Create a descriptive filename for the chord
-    chord_notes_str = "-".join([f"{note}{octave}" for note, octave in chord_notes])
-    chord_filename = f"{prefix}-{root_note}{root_octave}_chord_{chord_notes_str}.wav"
-    output_path = os.path.join(target_dir, chord_filename)
-
-    # Skip if the file already exists
-    if os.path.exists(output_path):
-        print_info(f"Chord {chord_filename} already exists, skipping...")
-        return None, None
-
+    # Print information about the chord we're generating
     print_info(
-        f"Generating chord with root {root_note}{root_octave}: {chord_notes_str}"
+        f"Generating chord with root {root_note}{root_octave} and semitones {semitones}"
     )
 
-    # Load and mix the samples
-    mixed_audio = None
-    sr = None
-    max_duration = 0
+    # Check if we're dealing with extreme octaves (1, 5-8)
+    is_extreme_octave = root_octave == 1 or root_octave >= 5
 
-    # Determine the middle octave for more consistent blending
-    all_octaves = [octave for _, octave in chord_notes]
-    if all_octaves:
-        middle_octave = (min(all_octaves) + max(all_octaves)) // 2
-    else:
-        middle_octave = 4  # Default fallback
+    # For extreme octaves, we'll use a more reliable approach
+    # We'll generate the chord in a middle octave (3) and then pitch shift it
+    if is_extreme_octave:
+        print_info(f"Using reliable approach for extreme octave {root_octave}")
 
-    print_info(f"  Using middle octave {middle_octave} for processing")
+        # Generate the chord in octave 3
+        middle_octave = 3
+        middle_chord_audio, middle_sr = generate_chord(
+            root_note,
+            middle_octave,
+            semitones,
+            all_samples,
+            source_dir,
+            target_dir,
+            prefix,
+            chord_duration_factor,
+        )
 
-    # Start by finding the sample in the middle octave with the root note
-    middle_chord_path = None
-    middle_chord_audio = None
-    middle_sr = None
-    max_sr = 0  # Keep track of the highest sample rate
-
-    # Try to find the root note in the middle octave, checking target_dir first
-    for sample in all_samples:
-        note, octave = parse_note_from_filename(sample)
-        if note == root_note and octave == middle_octave:
-            potential_path_target = os.path.join(target_dir, sample)
-            potential_path_source = os.path.join(source_dir, sample)
-            if os.path.exists(potential_path_target):
-                middle_chord_path = potential_path_target
-                break
-            elif os.path.exists(potential_path_source):
-                middle_chord_path = potential_path_source
-                break  # Found in source, still use it if not in target
-
-    # If root note in middle octave not found, use any sample in the middle octave (target first)
-    if middle_chord_path is None:
-        for sample in all_samples:
-            note, octave = parse_note_from_filename(sample)
-            if octave == middle_octave:
-                potential_path_target = os.path.join(target_dir, sample)
-                potential_path_source = os.path.join(source_dir, sample)
-                if os.path.exists(potential_path_target):
-                    middle_chord_path = potential_path_target
-                    break
-                elif os.path.exists(potential_path_source):
-                    middle_chord_path = potential_path_source
-                    break  # Found in source
-
-    # If still not found, use the first available sample (target first)
-    if middle_chord_path is None and all_samples:
-        first_sample = all_samples[0]
-        potential_path_target = os.path.join(target_dir, first_sample)
-        potential_path_source = os.path.join(source_dir, first_sample)
-        if os.path.exists(potential_path_target):
-            middle_chord_path = potential_path_target
-        elif os.path.exists(potential_path_source):
-            middle_chord_path = potential_path_source
-
-    if middle_chord_path:
-        print_info(f"  Loading middle octave anchor sample: {middle_chord_path}")
-        try:
-            middle_chord_audio, middle_sr = librosa.load(middle_chord_path, sr=None)
-            print_info(f"  Successfully loaded anchor sample.")
-            max_sr = middle_sr
-        except Exception as e:
-            print_error(
-                f"  Error loading anchor sample {middle_chord_path}: {str(e)}. Aborting chord generation."
-            )
+        if middle_chord_audio is None:
+            print_error(f"Failed to generate middle octave chord as a base")
             return None, None
-    else:
+
+        # Calculate the pitch shift factor
+        source_freq = get_note_frequency(root_note, middle_octave)
+        target_freq = get_note_frequency(root_note, root_octave)
+        shift_factor = target_freq / source_freq
+
+        print_info(
+            f"Pitch shifting from {root_note}{middle_octave} to {root_note}{root_octave} (factor: {shift_factor:.2f})"
+        )
+
+        # Resample the audio
+        if shift_factor != 1.0:
+            # For higher notes, we need to shorten the sample (speed up)
+            # For lower notes, we need to lengthen the sample (slow down)
+            new_length = int(len(middle_chord_audio) / shift_factor)
+            new_audio = scipy_signal.resample(middle_chord_audio, new_length)
+
+            # Time stretching to maintain consistent duration
+            current_duration = len(new_audio) / middle_sr
+            source_duration = len(middle_chord_audio) / middle_sr
+            stretch_factor = source_duration / current_duration
+
+            # Only apply time stretching if the difference is significant
+            if abs(stretch_factor - 1.0) > 0.01:
+                print_info(
+                    f"Time stretching to match duration (factor: {stretch_factor:.2f})"
+                )
+
+                # For librosa's time_stretch, rate < 1 makes it longer
+                rate = 1.0 / stretch_factor
+
+                # For very short samples, use a smaller n_fft value
+                n_fft = 2048  # Default value
+                if len(new_audio) < n_fft:
+                    n_fft = 2 ** int(np.log2(len(new_audio) - 1))
+                    n_fft = max(32, n_fft)  # Ensure it's not too small
+
+                # Convert to float64 to ensure it's the right type for time_stretch
+                if isinstance(new_audio, tuple):
+                    new_audio_float = new_audio[0].astype(np.float64)
+                else:
+                    new_audio_float = new_audio.astype(np.float64)
+
+                # Apply time stretching
+                new_audio = librosa.effects.time_stretch(
+                    new_audio_float, rate=float(rate), n_fft=n_fft
+                )
+
+                # Apply a gentle envelope to ensure smooth decay
+                envelope = np.ones(len(new_audio))
+                fade_len = min(
+                    int(middle_sr * 0.1), len(new_audio) // 10
+                )  # 100ms fade or 1/10 of length
+
+                # Only apply fade out (keep the attack intact)
+                if fade_len > 0:
+                    envelope[-fade_len:] = np.linspace(1, 0, fade_len)
+
+                new_audio = new_audio * envelope
+
+            # Normalize the final output to prevent clipping
+            if np.max(np.abs(new_audio)) > 0:
+                new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
+
+            return new_audio, middle_sr
+
+        return middle_chord_audio, middle_sr
+
+    # For normal octaves, continue with the original approach
+    # Get the sample rate from the first available sample
+    first_sample = all_samples[0]
+
+    # Check both source and target directories for the first sample
+    first_path = None
+    if os.path.exists(os.path.join(target_dir, first_sample)):
+        first_path = os.path.join(target_dir, first_sample)
+    elif os.path.exists(os.path.join(source_dir, first_sample)):
+        first_path = os.path.join(source_dir, first_sample)
+
+    # If we still can't find the file, try to find any valid sample
+    if not first_path:
+        for sample in all_samples:
+            if os.path.exists(os.path.join(target_dir, sample)):
+                first_path = os.path.join(target_dir, sample)
+                break
+            elif os.path.exists(os.path.join(source_dir, sample)):
+                first_path = os.path.join(source_dir, sample)
+                break
+
+    if not first_path:
         print_error(
-            f"  Could not find a suitable anchor sample in {target_dir} or {source_dir}. Aborting chord generation."
+            f"Error: Could not find any valid sample files in {source_dir} or {target_dir}"
         )
         return None, None
 
-    # Calculate shift factor - how much we need to shift the sample to get to the root note
-    shift_factor = get_note_frequency(root_note, root_octave) / get_note_frequency(
-        root_note, middle_octave
-    )
+    # Load the sample to get the sample rate
+    _, sr = librosa.load(first_path, sr=None)
 
-    # Resample the audio
-    if shift_factor != 1.0:
-        # Use standard shifting
-        # For higher notes, we need to shorten the sample (speed up)
-        # For lower notes, we need to lengthen the sample (slow down)
-        new_length = int(len(middle_chord_audio) / shift_factor)
-        new_audio = scipy_signal.resample(middle_chord_audio, new_length)
+    # Initialize an empty array for the mixed audio
+    mixed_audio = None
+    max_length = 0
 
-    else:
-        # No shift needed, use the original audio
-        new_audio = middle_chord_audio
+    # Load and process each note in the chord
+    note_audios = []
+    for semitone in semitones:
+        # Get the note and octave for this semitone offset
+        note, octave = get_note_from_semitone(root_note, root_octave, semitone)
 
-    # Normalize the shifted audio
-    if np.max(np.abs(new_audio)) > 0:
-        new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
+        # Find the sample file for this note
+        note_filename = f"{prefix}-{note}{octave}.wav"
 
-    # Set up for mixing
-    chord_audio = new_audio
-    sr = middle_sr
+        # Debug information
+        print_info(f"Looking for note: {note_filename}")
+        print_info(f"  Checking target dir: {os.path.join(target_dir, note_filename)}")
+        print_info(f"  Checking source dir: {os.path.join(source_dir, note_filename)}")
 
-    # Extend duration for chord sustain if requested
-    if chord_duration_factor > 1.0:
-        new_length = int(len(chord_audio) * chord_duration_factor)
-        extended_audio = np.zeros(new_length)
-        extended_audio[: len(chord_audio)] = chord_audio
-        # Crossfade to silence
-        fade_start = int(len(chord_audio) * 0.9)
-        fade_length = len(chord_audio) - fade_start
-        for i in range(fade_length):
-            factor = 1.0 - (i / fade_length)
-            extended_audio[fade_start + i] = chord_audio[fade_start + i] * factor
-        chord_audio = extended_audio
-
-    # Now add individual notes
-    for note, octave in chord_notes:
-        # Skip root note as we already have it
-        if note == root_note and octave == root_octave:
-            continue
-
-        print_info(f"  Adding note {note}{octave} to chord")
-
-        # Look for exact match first
-        exact_match = None
-        for sample in all_samples:
-            sample_note, sample_octave = parse_note_from_filename(sample)
-            if sample_note == note and sample_octave == octave:
-                exact_match = sample
-                break
-
-        if exact_match:
-            # Use the exact match file, checking target_dir first
-            note_path_target = os.path.join(target_dir, exact_match)
-            note_path_source = os.path.join(source_dir, exact_match)
-            if os.path.exists(note_path_target):
-                note_path = note_path_target
-            elif os.path.exists(note_path_source):
-                note_path = note_path_source
-            else:
-                print_warning(
-                    f"  Exact match file {exact_match} not found in {target_dir} or {source_dir}, skipping."
-                )
-                continue
-
-            try:
-                audio, note_sr = librosa.load(note_path, sr=None)
-                print_info(f"  Found exact match: {exact_match} at {note_path}")
-                # Keep track of the highest sample rate encountered
-                if note_sr > max_sr:
-                    max_sr = note_sr
-            except Exception as e:
-                print_error(f"  Error loading exact match {note_path}: {str(e)}")
-                continue
-
+        # Check if the file exists in target directory first, then source
+        note_path = None
+        if os.path.exists(os.path.join(target_dir, note_filename)):
+            note_path = os.path.join(target_dir, note_filename)
+            print_info(f"  Found in target dir: {note_path}")
+        elif os.path.exists(os.path.join(source_dir, note_filename)):
+            note_path = os.path.join(source_dir, note_filename)
+            print_info(f"  Found in source dir: {note_path}")
         else:
-            # Find the closest sample
-            closest_file, closest_note, closest_octave = find_closest_sample(
-                note, octave, all_samples
-            )
-
-            if not closest_file:
-                print_warning(
-                    f"  No close sample found for {note}{octave}, skipping this note"
+            # If the exact note doesn't exist, find the closest available note
+            print_info(f"  Note not found directly, looking for closest sample")
+            closest_sample = find_closest_sample(note, octave, all_samples)
+            if closest_sample:
+                closest_note, closest_octave = parse_note_from_filename(closest_sample)
+                print_info(
+                    f"  Using closest sample: {closest_sample} ({closest_note}{closest_octave})"
                 )
-                continue
 
-            closest_path = os.path.join(source_dir, closest_file)
-            print_info(
-                f"  Using {closest_file} ({closest_note}{closest_octave}) as source for {note}{octave}"
-            )
-
-            try:
-                # Load the closest sample
-                if closest_path:  # Ensure path is not None
-                    audio, sr = librosa.load(closest_path, sr=None)
-                    print_info(f"  Successfully loaded closest sample")
-                    # Keep track of the highest sample rate encountered
-                    if sr > max_sr:
-                        max_sr = sr
+                # Check if the closest sample exists in target or source directory
+                closest_path = None
+                if os.path.exists(os.path.join(target_dir, closest_sample)):
+                    closest_path = os.path.join(target_dir, closest_sample)
+                    print_info(f"  Found closest sample in target dir: {closest_path}")
+                elif os.path.exists(os.path.join(source_dir, closest_sample)):
+                    closest_path = os.path.join(source_dir, closest_sample)
+                    print_info(f"  Found closest sample in source dir: {closest_path}")
                 else:
-                    print_error(f"  Error: closest_path is None")
+                    print_warning(f"  Closest sample file not found: {closest_sample}")
+                    print_warning(
+                        f"  Checked: {os.path.join(target_dir, closest_sample)}"
+                    )
+                    print_warning(
+                        f"  Checked: {os.path.join(source_dir, closest_sample)}"
+                    )
                     continue
 
-                # Pitch shift to the target note using standard method
-                audio, sr = pitch_shift_sample(
-                    audio, sr, closest_note, closest_octave, note, octave
-                )
+                try:
+                    # Load the closest sample
+                    if closest_path:  # Ensure path is not None
+                        audio, sr = librosa.load(closest_path, sr=None)
+                        print_info(f"  Successfully loaded closest sample")
+                    else:
+                        print_error(f"  Error: closest_path is None")
+                        continue
 
-                print_info(
-                    f"  Successfully pitch-shifted to {note}{octave} using standard method"
-                )
+                    # Pitch shift to the target note
+                    audio, sr = pitch_shift_sample(
+                        audio, sr, closest_note, closest_octave, note, octave
+                    )
+                    print_info(f"  Successfully pitch-shifted to {note}{octave}")
 
-                # Trim silence at the beginning to ensure all notes start together
-                # Ensure audio is a numpy array
-                if isinstance(audio, tuple):
-                    audio = audio[0]
+                    # Trim silence at the beginning to ensure all notes start together
+                    # Ensure audio is a numpy array
+                    if isinstance(audio, tuple):
+                        audio = audio[0]
 
-                # Detect the start of the signal
-                start_threshold = 0.01  # 1% of the peak amplitude
-                nonsilent = np.where(
-                    np.abs(audio) > start_threshold * np.max(np.abs(audio))
-                )[0]
-                if len(nonsilent) > 0:
-                    start_idx = max(
-                        0, nonsilent[0] - 400
-                    )  # Add a small buffer before the start
-                    audio = audio[start_idx:]
-                    print_info(
-                        f"  Trimmed {start_idx} samples of silence from beginning"
+                    # Convert to float64 for librosa.effects.trim
+                    audio_float = (
+                        audio.astype(np.float64) if hasattr(audio, "astype") else audio
+                    )
+                    audio_trimmed, _ = librosa.effects.trim(
+                        audio_float, top_db=30, frame_length=512, hop_length=128
                     )
 
-            except Exception as e:
-                print_error(f"  Error processing note {note}{octave}: {str(e)}")
+                    # Make sure we're working with a numpy array, not a tuple
+                    if isinstance(audio_trimmed, tuple):
+                        audio = audio_trimmed[
+                            0
+                        ]  # Extract the audio data from the tuple
+                    else:
+                        audio = audio_trimmed
+
+                    note_audios.append(audio)
+                    max_length = max(max_length, len(audio))
+                    print_info(f"  Successfully processed note for chord")
+                    continue
+                except Exception as e:
+                    print_error(f"  Error processing closest sample: {str(e)}")
+                    continue
+            else:
+                print_warning(
+                    f"  Warning: Could not find a suitable sample for {note}{octave} in chord"
+                )
                 continue
 
-        # Normalize the note
-        if np.max(np.abs(audio)) > 0:
-            audio = (
-                audio / np.max(np.abs(audio)) * 0.95 * 0.5
-            )  # Reduce volume of harmony notes
+        try:
+            # Load the audio for this note
+            audio, _ = librosa.load(note_path, sr=sr)
+            print_info(f"  Successfully loaded note")
 
-        # Ensure all audios are resampled to the highest encountered sample rate for mixing
-        if sr != max_sr:
-            print_info(f"  Resampling note from {sr} Hz to {max_sr} Hz")
-            audio = librosa.resample(audio, orig_sr=sr, target_sr=max_sr)
-            sr = max_sr  # Update sr for this audio
+            # Trim silence at the beginning to ensure all notes start together
+            # Ensure audio is a numpy array
+            if isinstance(audio, tuple):
+                audio = audio[0]
 
-        # Resample the main chord_audio if it's not at max_sr yet
-        # Ensure chord_audio is a numpy array before resampling
-        if isinstance(chord_audio, tuple):
-            chord_audio = chord_audio[0]
-
-        if middle_sr != max_sr:
-            print_info(
-                f"  Resampling main chord audio from {middle_sr} Hz to {max_sr} Hz"
+            # Convert to float64 for librosa.effects.trim
+            audio_float = (
+                audio.astype(np.float64) if hasattr(audio, "astype") else audio
             )
-            chord_audio = librosa.resample(
-                chord_audio, orig_sr=middle_sr, target_sr=max_sr
+            audio_trimmed, _ = librosa.effects.trim(
+                audio_float, top_db=30, frame_length=512, hop_length=128
             )
 
-        # Mix note with chord
-        # First ensure both are long enough
-        if len(audio) > len(chord_audio):
-            extended_chord = np.zeros(len(audio))
-            extended_chord[: len(chord_audio)] = chord_audio
-            chord_audio = extended_chord
-        else:
-            extended_note = np.zeros(len(chord_audio))
-            extended_note[: len(audio)] = audio
-            audio = extended_note
+            # Make sure we're working with a numpy array, not a tuple
+            if isinstance(audio_trimmed, tuple):
+                audio = audio_trimmed[0]  # Extract the audio data from the tuple
+            else:
+                audio = audio_trimmed
 
-        # Mix with some basic level adjustment
-        chord_audio = chord_audio + audio
+            note_audios.append(audio)
+            max_length = max(max_length, len(audio))
+            print_info(f"  Successfully processed note for chord")
+            continue
+        except Exception as e:
+            print_error(f"  Error processing note: {str(e)}")
+            continue
 
-    # Normalize the final chord
-    if np.max(np.abs(chord_audio)) > 0:
-        chord_audio = chord_audio / np.max(np.abs(chord_audio)) * 0.95
+    if not note_audios:
+        print(
+            f"Error: Could not generate chord with root {root_note}{root_octave} - no valid notes found"
+        )
+        return None, None
 
-    # Save the chord
-    sf.write(output_path, chord_audio, sr)
-    print_success(f"Saved chord {chord_filename}")
+    # Extend chord duration by the specified factor
+    if chord_duration_factor > 1.0:
+        # Instead of repeating the sustain, we'll use a proper time stretching approach
+        # but apply it to the entire mixed chord after all notes are combined
 
-    return chord_audio, sr
+        # First, mix the notes at their original length
+        aligned_note_audios = []
+        for audio in note_audios:
+            # Pad shorter audio to match the longest one
+            padded_audio = np.pad(audio, (0, max(0, max_length - len(audio))))
+            aligned_note_audios.append(padded_audio)
+
+        # Mix all notes together
+        mixed_audio = np.zeros(max_length)
+        for audio in aligned_note_audios:
+            # Add to the mix (with normalization to prevent clipping)
+            mixed_audio += audio / len(aligned_note_audios)
+
+        # Now time-stretch the entire mixed chord
+        # This preserves the natural envelope and harmonics better
+
+        # For very short samples, use a smaller n_fft value
+        n_fft = 2048  # Default value
+        if len(mixed_audio) < n_fft:
+            # Use a power of 2 that's smaller than the audio length
+            n_fft = 2 ** int(np.log2(len(mixed_audio) - 1))
+            n_fft = max(32, n_fft)  # Ensure it's not too small
+
+        # Convert to float64 to ensure it's the right type for time_stretch
+        mixed_audio_float = mixed_audio.astype(np.float64)
+
+        # Use librosa's time stretching on the mixed chord
+        # For stretching, rate < 1 makes it longer
+        rate = 1.0 / chord_duration_factor
+        mixed_audio = librosa.effects.time_stretch(
+            mixed_audio_float, rate=float(rate), n_fft=n_fft
+        )
+
+        # Apply a gentle envelope to ensure smooth decay
+        envelope = np.ones(len(mixed_audio))
+        fade_len = min(
+            int(sr * 0.1), len(mixed_audio) // 10
+        )  # 100ms fade or 1/10 of length
+
+        # Only apply fade out (keep the attack intact)
+        if fade_len > 0:
+            envelope[-fade_len:] = np.linspace(1, 0, fade_len)
+
+        mixed_audio = mixed_audio * envelope
+
+        # Normalize the final output to prevent clipping
+        if np.max(np.abs(mixed_audio)) > 0:
+            mixed_audio = mixed_audio / np.max(np.abs(mixed_audio)) * 0.95
+
+        return mixed_audio, sr
+
+    # If no duration extension, continue with the original approach
+    # Ensure all notes have the same length
+    aligned_note_audios = []
+    for audio in note_audios:
+        # Pad shorter audio to match the longest one
+        padded_audio = np.pad(audio, (0, max(0, max_length - len(audio))))
+        aligned_note_audios.append(padded_audio)
+
+    # Mix all notes together
+    mixed_audio = np.zeros(max_length)
+    for audio in aligned_note_audios:
+        # Add to the mix (with normalization to prevent clipping)
+        mixed_audio += audio / len(aligned_note_audios)
+
+    # Apply a slight fade-in and fade-out to prevent clicks
+    fade_samples = min(int(sr * 0.01), max_length // 10)  # 10ms fade or 1/10 of length
+    if fade_samples > 0:
+        # Fade in
+        fade_in = np.linspace(0, 1, fade_samples)
+        mixed_audio[:fade_samples] *= fade_in
+
+        # Fade out
+        fade_out = np.linspace(1, 0, fade_samples)
+        mixed_audio[-fade_samples:] *= fade_out
+
+    # Normalize the final output to prevent clipping
+    if np.max(np.abs(mixed_audio)) > 0:
+        mixed_audio = mixed_audio / np.max(np.abs(mixed_audio)) * 0.95
+
+    return mixed_audio, sr
 
 
 def generate_chords(
