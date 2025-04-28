@@ -2686,6 +2686,9 @@ def interactive_mode():
     print(f"Generate full sample: {options_dict['gen_full']}")
     print(f"Time match: {options_dict['time_match']}")
     print(f"Generate chords: {options_dict['chords']}")
+    print(
+        f"Normalize audio: {options_dict['normalize_audio']} (turned off preserves original volume)"
+    )
 
     if options_dict["chords"]:
         if chord_qualities:
