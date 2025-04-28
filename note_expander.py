@@ -660,6 +660,7 @@ def generate_chord(
             print_info(f"  Note not found directly, looking for closest sample")
             closest_sample = find_closest_sample(note, octave, all_samples)
             if closest_sample:
+                # Extract note and octave from the closest sample
                 closest_note, closest_octave = parse_note_from_filename(closest_sample)
                 print_info(
                     f"  Using closest sample: {closest_sample} ({closest_note}{closest_octave})"
