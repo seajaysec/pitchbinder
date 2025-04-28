@@ -2311,7 +2311,7 @@ def generate_full_chord_samples(chord_dir, prefix):
 
 
 def interactive_mode():
-    """Run the tool in interactive mode using questionary."""
+    """Interactive mode for selecting and processing multiple directories."""
     print(f"\n{HIGHLIGHT}{'='*60}")
     print(f"{HIGHLIGHT}{'='*15} NOTE SAMPLE EXPANDER {'='*15}")
     print(f"{HIGHLIGHT}{'='*60}{RESET}\n")
@@ -2462,6 +2462,8 @@ def interactive_mode():
         "keep_artifacts": "keep_artifacts" in options,
         "use_custom_prefix": "use_custom_prefix" in options,
         "set_custom_workers": "set_custom_workers" in options,
+        "pitch_shift_method": "standard",  # Default to standard method
+        "normalize_audio": False,  # Default to not normalizing audio
     }
 
     # Set pitch shift method to standard (no menu selection needed)
@@ -2969,11 +2971,11 @@ def interactive_mode():
 
 
 def process_directory_wrapper(**kwargs):
-    """Wrapper for process_directory to handle thread safety and exceptions."""
-    source_dir = kwargs.get("source_dir", "unknown")
+    """Wrapper function for process_directory to handle exceptions and status updates."""
+    directory = kwargs.get("source_dir")
     try:
         # Log start of processing
-        update_status(source_dir, "Started processing", "info")
+        update_status(directory, "Started processing", "info")
 
         # Process the directory
         result = process_directory(
@@ -2995,13 +2997,13 @@ def process_directory_wrapper(**kwargs):
         )
 
         # Log successful completion
-        update_status(source_dir, "Processing completed successfully", "success")
+        update_status(directory, "Processing completed successfully", "success")
 
         return result
     except Exception as e:
         # Log error
         error_message = f"Error processing directory: {str(e)}"
-        update_status(source_dir, error_message, "error")
+        update_status(directory, error_message, "error")
 
         # Still raise the exception for the executor to handle
         raise e
