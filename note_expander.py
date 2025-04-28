@@ -498,6 +498,7 @@ def generate_chord(
     prefix,
     chord_duration_factor=4.0,
     pitch_shift_method="standard",  # Keep parameter but don't use it
+    normalize_audio=False,  # Add normalize_audio parameter, default to False
 ):
     """Generate a chord sample by mixing multiple note samples."""
     notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -526,6 +527,7 @@ def generate_chord(
             target_dir,
             prefix,
             chord_duration_factor,
+            normalize_audio=normalize_audio,  # Pass the normalize parameter
         )
 
         if middle_chord_audio is None:
@@ -591,8 +593,8 @@ def generate_chord(
 
                 new_audio = new_audio * envelope
 
-            # Normalize the final output to prevent clipping
-            if np.max(np.abs(new_audio)) > 0:
+            # Normalize the final output to prevent clipping only if requested
+            if normalize_audio and np.max(np.abs(new_audio)) > 0:
                 new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
 
             return new_audio, middle_sr
@@ -821,8 +823,8 @@ def generate_chord(
 
         mixed_audio = mixed_audio * envelope
 
-        # Normalize the final output to prevent clipping
-        if np.max(np.abs(mixed_audio)) > 0:
+        # Normalize the final output to prevent clipping only if requested
+        if normalize_audio and np.max(np.abs(mixed_audio)) > 0:
             mixed_audio = mixed_audio / np.max(np.abs(mixed_audio)) * 0.95
 
         return mixed_audio, sr
@@ -852,8 +854,8 @@ def generate_chord(
         fade_out = np.linspace(1, 0, fade_samples)
         mixed_audio[-fade_samples:] *= fade_out
 
-    # Normalize the final output to prevent clipping
-    if np.max(np.abs(mixed_audio)) > 0:
+    # Normalize the final output to prevent clipping only if requested
+    if normalize_audio and np.max(np.abs(mixed_audio)) > 0:
         mixed_audio = mixed_audio / np.max(np.abs(mixed_audio)) * 0.95
 
     return mixed_audio, sr
@@ -870,6 +872,7 @@ def generate_chords(
     selected_chord_types=None,  # New parameter for selected chord types
     selected_inversions=None,  # New parameter for selected inversions
     pitch_shift_method="standard",  # Keep parameter but don't use it
+    normalize_audio=False,  # Add normalize_audio parameter, default to False
 ):
     """Generate chord samples based on the provided chord definitions."""
     notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -1031,6 +1034,7 @@ def generate_chords(
                         target_dir,
                         prefix,
                         chord_duration_factor=4.0,
+                        normalize_audio=normalize_audio,
                     )
 
                     if chord_audio is not None:
@@ -1080,6 +1084,7 @@ def generate_chords(
                                         target_dir,
                                         prefix,
                                         chord_duration_factor=4.0,
+                                        normalize_audio=normalize_audio,
                                     )
 
                                     # Check if inversion generation returned None
@@ -1216,8 +1221,8 @@ def generate_chords(
 
                                 new_audio = new_audio * envelope
 
-                            # Normalize the final output to prevent clipping
-                            if np.max(np.abs(new_audio)) > 0:
+                            # Normalize the final output to prevent clipping only if requested
+                            if normalize_audio and np.max(np.abs(new_audio)) > 0:
                                 new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
 
                             # Save the pitch-shifted chord
@@ -1303,6 +1308,7 @@ def generate_missing_samples(
     time_match=False,
     pitch_shift_method="standard",
     keep_artifacts=False,
+    normalize_audio=False,  # Add normalize_audio parameter, default to False
 ):
     """Generate all missing samples across the 8-octave range."""
     if not os.path.exists(target_dir):
@@ -1436,7 +1442,7 @@ def generate_missing_samples(
                         )
 
                 # Normalize output
-                if np.max(np.abs(new_audio)) > 0:
+                if normalize_audio and np.max(np.abs(new_audio)) > 0:
                     new_audio = new_audio / np.max(np.abs(new_audio)) * 0.95
 
                 # Save the standard method output
@@ -1755,6 +1761,7 @@ def process_directory(
     selected_inversions=None,  # New parameter for selected inversions
     overwrite=False,  # Parameter to control overwriting existing directories
     pitch_shift_method="standard",  # Parameter to control pitch shift method: "standard" only
+    normalize_audio=False,  # Add normalize_audio parameter, default to False
 ):
     """Process a single directory to generate missing samples."""
     # Acquire lock for consistent console output when running in parallel
@@ -1841,6 +1848,7 @@ def process_directory(
             time_match,
             pitch_shift_method,
             keep_artifacts,
+            normalize_audio,  # Pass the parameter
         )
 
     # Use lock for progress output
@@ -1863,6 +1871,7 @@ def process_directory(
             selected_chord_types=selected_chord_types,  # Pass selected chord types
             selected_inversions=selected_inversions,  # Pass selected inversions
             pitch_shift_method=pitch_shift_method,  # Pass pitch shift method
+            normalize_audio=normalize_audio,  # Pass the parameter
         )
         # Keep the original chord_dir value for the cleanup step
         update_status(
@@ -2302,7 +2311,7 @@ def generate_full_chord_samples(chord_dir, prefix):
 
 
 def interactive_mode():
-    """Run the tool in interactive mode using questionary."""
+    """Interactive mode for selecting and processing multiple directories."""
     print(f"\n{HIGHLIGHT}{'='*60}")
     print(f"{HIGHLIGHT}{'='*15} NOTE SAMPLE EXPANDER {'='*15}")
     print(f"{HIGHLIGHT}{'='*60}{RESET}\n")
@@ -2439,6 +2448,10 @@ def interactive_mode():
             questionary.Choice(
                 "Set custom number of parallel workers", "set_custom_workers"
             ),
+            questionary.Choice(
+                "Normalize audio to peak (not recommended for preserving volume)",
+                "normalize_audio",
+            ),
         ],
         style=custom_style,
     ).ask()
@@ -2453,10 +2466,15 @@ def interactive_mode():
         "keep_artifacts": "keep_artifacts" in options,
         "use_custom_prefix": "use_custom_prefix" in options,
         "set_custom_workers": "set_custom_workers" in options,
+        "pitch_shift_method": "standard",  # Default to standard method
+        "normalize_audio": "normalize_audio"
+        in options,  # Set based on option selection
     }
 
     # Set pitch shift method to standard (no menu selection needed)
     pitch_shift_method = "standard"
+    # Set normalize_audio from the options_dict
+    normalize_audio = options_dict["normalize_audio"]
 
     # If the user wants to generate chords, ask additional questions about chord types and inversions
     selected_chord_types = None
@@ -2668,6 +2686,9 @@ def interactive_mode():
     print(f"Generate full sample: {options_dict['gen_full']}")
     print(f"Time match: {options_dict['time_match']}")
     print(f"Generate chords: {options_dict['chords']}")
+    print(
+        f"Normalize audio: {options_dict['normalize_audio']} (turned off preserves original volume)"
+    )
 
     if options_dict["chords"]:
         if chord_qualities:
@@ -2817,6 +2838,7 @@ def interactive_mode():
                         "selected_inversions": selected_inversions,  # Add new parameter
                         "overwrite": options_dict["overwrite"],
                         "pitch_shift_method": pitch_shift_method,  # New pitch shift method parameter
+                        "normalize_audio": normalize_audio,  # Add normalize_audio parameter
                     }
                 )
 
@@ -2923,6 +2945,7 @@ def interactive_mode():
                     selected_inversions=selected_inversions,  # Add new parameter
                     overwrite=options_dict["overwrite"],
                     pitch_shift_method=pitch_shift_method,  # Add pitch shift method parameter
+                    normalize_audio=normalize_audio,  # Add normalize_audio parameter
                 )
     else:
         # Process just the single directory (no parallelization needed)
@@ -2951,17 +2974,18 @@ def interactive_mode():
             selected_inversions=selected_inversions,  # Add new parameter
             overwrite=options_dict["overwrite"],
             pitch_shift_method=pitch_shift_method,  # Add pitch shift method parameter
+            normalize_audio=normalize_audio,  # Add normalize_audio parameter
         )
 
     print_success("Processing complete!")
 
 
 def process_directory_wrapper(**kwargs):
-    """Wrapper for process_directory to handle thread safety and exceptions."""
-    source_dir = kwargs.get("source_dir", "unknown")
+    """Wrapper function for process_directory to handle exceptions and status updates."""
+    directory = kwargs.get("source_dir")
     try:
         # Log start of processing
-        update_status(source_dir, "Started processing", "info")
+        update_status(directory, "Started processing", "info")
 
         # Process the directory
         result = process_directory(
@@ -2979,16 +3003,17 @@ def process_directory_wrapper(**kwargs):
             selected_inversions=kwargs.get("selected_inversions"),
             overwrite=kwargs.get("overwrite", False),
             pitch_shift_method=kwargs.get("pitch_shift_method", "standard"),
+            normalize_audio=kwargs.get("normalize_audio", False),
         )
 
         # Log successful completion
-        update_status(source_dir, "Processing completed successfully", "success")
+        update_status(directory, "Processing completed successfully", "success")
 
         return result
     except Exception as e:
         # Log error
         error_message = f"Error processing directory: {str(e)}"
-        update_status(source_dir, error_message, "error")
+        update_status(directory, error_message, "error")
 
         # Still raise the exception for the executor to handle
         raise e
